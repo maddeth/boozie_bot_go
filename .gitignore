@@ -1,0 +1,17 @@
+# Binary
+bot
+
+# Config with secrets
+config.json
+secret.json
+tokens.*.json
+google-credentials.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
