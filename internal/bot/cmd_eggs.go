@@ -13,16 +13,16 @@ import (
 
 var twitchUsernameRE = regexp.MustCompile(`^[a-zA-Z0-9_]{4,25}$`)
 
-// cmdAddEggs handles !addeggs <username> <amount> (moderator only).
+// cmdAddEggs handles !add<points> <username> <amount> (moderator only).
 func (b *Bot) cmdAddEggs(ctx context.Context, msg *twitch.ChatMessage) {
 	if !b.isMod(ctx, msg) {
 		b.sayf("Get fucked %s, you're not a mod cmonBruh", msg.User.DisplayName)
 		return
 	}
 
-	args := strings.Fields(msg.Text[len("!addeggs"):])
+	args := strings.Fields(msg.Text[len(b.cmdAddPoints):])
 	if len(args) != 2 {
-		b.say("Incorrect arguments, please use !addeggs username numberOfEggs")
+		b.sayf("Incorrect arguments, please use %s username amount", b.cmdAddPoints)
 		return
 	}
 
@@ -34,7 +34,7 @@ func (b *Bot) cmdAddEggs(ctx context.Context, msg *twitch.ChatMessage) {
 
 	amount, err := strconv.Atoi(args[1])
 	if err != nil {
-		b.sayf("Invalid number of eggs: %s", args[1])
+		b.sayf("Invalid number of %s: %s", b.cfg.PointsName, args[1])
 		return
 	}
 
@@ -44,21 +44,21 @@ func (b *Bot) cmdAddEggs(ctx context.Context, msg *twitch.ChatMessage) {
 		return
 	}
 
-	result, err := b.eggs.EggUpdateCommand(ctx, username, amount, targetID)
+	result, err := b.eggs.EggUpdateCommand(ctx, username, amount, targetID, b.cfg.PointsName, b.cfg.PointsNameSingular)
 	if err != nil {
 		slog.Error("addeggs failed", "error", err, "user", username)
-		b.sayf("%s - Failed to update eggs", msg.User.DisplayName)
+		b.sayf("%s - Failed to update %s", msg.User.DisplayName, b.cfg.PointsName)
 		return
 	}
 	b.say(result)
 }
 
-// cmdEggs handles !eggs [username] — check your own or another user's eggs.
+// cmdEggs handles !<points> [username] — check your own or another user's points.
 func (b *Bot) cmdEggs(ctx context.Context, msg *twitch.ChatMessage) {
-	args := stripInvisibleChars(strings.TrimSpace(msg.Text[len("!eggs"):]))
+	args := stripInvisibleChars(strings.TrimSpace(msg.Text[len(b.cmdPoints):]))
 
 	if args != "" {
-		// Check someone else's eggs
+		// Check someone else's points
 		targetUsername := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(args)), "@")
 
 		targetID := b.resolveTwitchUserID(ctx, targetUsername)
@@ -74,14 +74,14 @@ func (b *Bot) cmdEggs(ctx context.Context, msg *twitch.ChatMessage) {
 			return
 		}
 		if eggs == nil {
-			b.sayf("%s - %s has no eggs yet!", msg.User.DisplayName, targetUsername)
+			b.sayf("%s - %s has no %s yet!", msg.User.DisplayName, targetUsername, b.cfg.PointsName)
 			return
 		}
-		b.sayf("%s - %s has %s eggs 🥚", msg.User.DisplayName, eggs.Username, formatNumber(eggs.EggsAmount))
+		b.sayf("%s - %s has %s %s %s", msg.User.DisplayName, eggs.Username, formatNumber(eggs.EggsAmount), b.cfg.PointsName, b.cfg.PointsEmoji)
 		return
 	}
 
-	// Check own eggs
+	// Check own points
 	identifier := msg.User.ID
 	if identifier == "" {
 		identifier = msg.User.Name
@@ -90,26 +90,26 @@ func (b *Bot) cmdEggs(ctx context.Context, msg *twitch.ChatMessage) {
 	eggs, err := b.eggs.GetUserEggs(ctx, identifier)
 	if err != nil {
 		slog.Error("failed to get eggs", "user", msg.User.Name, "error", err)
-		b.sayf("%s - Could not check your eggs", msg.User.DisplayName)
+		b.sayf("%s - Could not check your %s", msg.User.DisplayName, b.cfg.PointsName)
 		return
 	}
 	if eggs == nil {
-		b.sayf("%s - You have no eggs yet! Keep chatting to earn some 🥚", msg.User.DisplayName)
+		b.sayf("%s - You have no %s yet! Keep chatting to earn some %s", msg.User.DisplayName, b.cfg.PointsName, b.cfg.PointsEmoji)
 		return
 	}
-	b.sayf("%s - You have %s eggs 🥚", msg.User.DisplayName, formatNumber(eggs.EggsAmount))
+	b.sayf("%s - You have %s %s %s", msg.User.DisplayName, formatNumber(eggs.EggsAmount), b.cfg.PointsName, b.cfg.PointsEmoji)
 }
 
-// cmdTopEggs handles !topeggs — show the egg leaderboard.
+// cmdTopEggs handles !top<points> — show the points leaderboard.
 func (b *Bot) cmdTopEggs(ctx context.Context, msg *twitch.ChatMessage) {
 	leaderboard, err := b.eggs.GetLeaderboard(ctx, 5)
 	if err != nil {
 		slog.Error("failed to get leaderboard", "error", err)
-		b.sayf("%s - Could not load egg leaderboard", msg.User.DisplayName)
+		b.sayf("%s - Could not load %s leaderboard", msg.User.DisplayName, b.cfg.PointsName)
 		return
 	}
 	if len(leaderboard) == 0 {
-		b.sayf("%s - No egg data available yet!", msg.User.DisplayName)
+		b.sayf("%s - No %s data available yet!", msg.User.DisplayName, b.cfg.PointsName)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (b *Bot) cmdTopEggs(ctx context.Context, msg *twitch.ChatMessage) {
 	for i, e := range leaderboard {
 		parts[i] = fmt.Sprintf("%d. %s (%s)", i+1, e.Username, formatNumber(e.EggsAmount))
 	}
-	b.sayf("%s - Top Egg Collectors: %s 🥚", msg.User.DisplayName, strings.Join(parts, ", "))
+	b.sayf("%s - Top %s Collectors: %s %s", msg.User.DisplayName, strings.Title(b.cfg.PointsNameSingular), strings.Join(parts, ", "), b.cfg.PointsEmoji)
 }
 
 // stripInvisibleChars removes zero-width/invisible characters from text.

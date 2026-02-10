@@ -28,8 +28,8 @@ func (b *Bot) cmdPool(ctx context.Context, msg *twitch.ChatMessage) {
 		b.sayf("%s - Pool \"%s\" not found", msg.User.DisplayName, args[0])
 		return
 	}
-	b.sayf("%s - Pool \"%s\" has %s eggs from %d donors 🥚",
-		msg.User.DisplayName, pool.PoolName, formatNumber(pool.EggsAmount), pool.UniqueDonors)
+	b.sayf("%s - Pool \"%s\" has %s %s from %d donors %s",
+		msg.User.DisplayName, pool.PoolName, formatNumber(pool.EggsAmount), b.cfg.PointsName, pool.UniqueDonors, b.cfg.PointsEmoji)
 }
 
 // cmdDonate handles !donate <poolname> <amount>.
@@ -63,7 +63,7 @@ func (b *Bot) cmdDonate(ctx context.Context, msg *twitch.ChatMessage) {
 		case strings.Contains(errMsg, "not found"):
 			b.sayf("%s - Pool \"%s\" not found", msg.User.DisplayName, poolName)
 		case strings.Contains(errMsg, "insufficient") || strings.Contains(errMsg, "Insufficient"):
-			b.sayf("%s - You don't have enough eggs to donate %d", msg.User.DisplayName, amount)
+			b.sayf("%s - You don't have enough %s to donate %d", msg.User.DisplayName, b.cfg.PointsName, amount)
 		case strings.Contains(errMsg, "not active"):
 			b.sayf("%s - Pool \"%s\" is not active", msg.User.DisplayName, poolName)
 		default:
@@ -73,8 +73,8 @@ func (b *Bot) cmdDonate(ctx context.Context, msg *twitch.ChatMessage) {
 		return
 	}
 
-	b.sayf("%s donated %d eggs to pool \"%s\"! Pool total: %s 🥚",
-		msg.User.DisplayName, amount, pool.PoolName, formatNumber(pool.EggsAmount))
+	b.sayf("%s donated %d %s to pool \"%s\"! Pool total: %s %s",
+		msg.User.DisplayName, amount, b.cfg.PointsName, pool.PoolName, formatNumber(pool.EggsAmount), b.cfg.PointsEmoji)
 }
 
 // cmdListPools handles !pools — list active pools.
@@ -182,6 +182,6 @@ func (b *Bot) cmdDeletePool(ctx context.Context, msg *twitch.ChatMessage) {
 		return
 	}
 
-	b.sayf("%s deleted pool \"%s\" (had %s eggs)", msg.User.DisplayName, pool.PoolName, formatNumber(pool.EggsAmount))
+	b.sayf("%s deleted pool \"%s\" (had %s %s)", msg.User.DisplayName, pool.PoolName, formatNumber(pool.EggsAmount), b.cfg.PointsName)
 	slog.Info("pool deleted via chat", "pool", pool.PoolNameSanitised, "by", msg.User.DisplayName)
 }

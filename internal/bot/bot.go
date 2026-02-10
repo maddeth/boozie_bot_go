@@ -44,6 +44,12 @@ type Bot struct {
 
 	// chatters maps displayName/username -> twitchUserID for user resolution.
 	chatters sync.Map
+
+	// Precomputed command prefixes from config (e.g. "!eggs", "!addeggs")
+	cmdPoints      string
+	cmdAddPoints   string
+	cmdTopPoints   string
+	cmdMergePoints string
 }
 
 // New creates a new Bot with all its service dependencies.
@@ -65,18 +71,22 @@ func New(
 		ws = NopBroadcaster{}
 	}
 	return &Bot{
-		cfg:       cfg,
-		chat:      chat,
-		helix:     helix,
-		ws:        ws,
-		users:     users,
-		eggs:      eggs,
-		commands:  commands,
-		quotes:    quotes,
-		pools:     pools,
-		shoutouts: shoutouts,
-		merge:     merge,
-		alerts:    alerts,
+		cfg:            cfg,
+		chat:           chat,
+		helix:          helix,
+		ws:             ws,
+		users:          users,
+		eggs:           eggs,
+		commands:       commands,
+		quotes:         quotes,
+		pools:          pools,
+		shoutouts:      shoutouts,
+		merge:          merge,
+		alerts:         alerts,
+		cmdPoints:      "!" + cfg.PointsName,
+		cmdAddPoints:   "!add" + cfg.PointsName,
+		cmdTopPoints:   "!top" + cfg.PointsName,
+		cmdMergePoints: "!merge" + cfg.PointsName,
 	}
 }
 
@@ -117,11 +127,11 @@ func (b *Bot) HandleMessage(msg *twitch.ChatMessage) {
 
 	// Route commands (order matters — more specific prefixes first)
 	switch {
-	case strings.HasPrefix(lowerText, "!addeggs"):
+	case strings.HasPrefix(lowerText, b.cmdAddPoints):
 		b.cmdAddEggs(ctx, msg)
-	case strings.HasPrefix(lowerText, "!topeggs"):
+	case strings.HasPrefix(lowerText, b.cmdTopPoints):
 		b.cmdTopEggs(ctx, msg)
-	case strings.HasPrefix(lowerText, "!eggs"):
+	case strings.HasPrefix(lowerText, b.cmdPoints):
 		b.cmdEggs(ctx, msg)
 	case strings.HasPrefix(lowerText, "!reloadcommands"):
 		b.cmdReloadCommands(ctx, msg)
@@ -139,7 +149,7 @@ func (b *Bot) HandleMessage(msg *twitch.ChatMessage) {
 		b.cmdListPools(ctx, msg)
 	case strings.HasPrefix(lowerText, "!pool "):
 		b.cmdPool(ctx, msg)
-	case strings.HasPrefix(lowerText, "!mergeeggs "):
+	case strings.HasPrefix(lowerText, b.cmdMergePoints+" "):
 		b.cmdMergeEggs(ctx, msg)
 	case strings.HasPrefix(lowerText, "!addquote ") || strings.HasPrefix(lowerText, "!quoteadd "):
 		b.cmdAddQuote(ctx, msg)

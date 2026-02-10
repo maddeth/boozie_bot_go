@@ -191,13 +191,14 @@ func (h *HelixClient) GetChatters(ctx context.Context) (map[string]string, error
 }
 
 // GetSubscription checks if a user is subscribed. Returns the tier ("1", "2", "3") or "0".
+// Returns an error if the API call or response parsing fails (previously swallowed silently).
 func (h *HelixClient) GetSubscription(ctx context.Context, userID string) (string, error) {
 	body, err := h.helixGet(ctx, h.streamerID, "/subscriptions", url.Values{
 		"broadcaster_id": {h.streamerID},
 		"user_id":        {userID},
 	})
 	if err != nil {
-		return "0", nil
+		return "0", fmt.Errorf("subscription lookup for %s: %w", userID, err)
 	}
 
 	var resp struct {
@@ -206,10 +207,10 @@ func (h *HelixClient) GetSubscription(ctx context.Context, userID string) (strin
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return "0", nil
+		return "0", fmt.Errorf("parsing subscription response for %s: %w", userID, err)
 	}
 	if len(resp.Data) == 0 {
-		return "0", nil
+		return "0", nil // Not subscribed — this is expected
 	}
 
 	// Twitch returns "1000", "2000", "3000" — convert to "1", "2", "3"

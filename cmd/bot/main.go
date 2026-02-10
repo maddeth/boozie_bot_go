@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,6 +21,24 @@ import (
 	"github.com/maddeth/boozie-bot/internal/services"
 	"github.com/maddeth/boozie-bot/internal/twitch"
 	ws "github.com/maddeth/boozie-bot/internal/websocket"
+)
+
+// DistributionResult holds stats from the last egg distribution cycle.
+type DistributionResult struct {
+	Time                 time.Time      `json:"time"`
+	StreamLive           bool           `json:"streamLive"`
+	UniqueChatters       int            `json:"uniqueChatters"`
+	Rewarded             int            `json:"rewarded"`
+	TotalDistributed     int            `json:"totalDistributed"`
+	TierCounts           map[string]int `json:"tierCounts"`
+	SubLookupErrors      int            `json:"subLookupErrors"`
+	UserCreateErrors     int            `json:"userCreateErrors"`
+	RewardErrors         int            `json:"rewardErrors"`
+}
+
+var (
+	lastDistributionMu     sync.RWMutex
+	lastDistributionResult *DistributionResult
 )
 
 func main() {
@@ -36,7 +55,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	slog.Info("config loaded", "channel", cfg.MyChannel, "port", cfg.Port)
+	slog.Info("config loaded", "channel", cfg.MyChannel, "port", cfg.Port,
+		"pointsName", cfg.PointsName)
 
 	// Initialize database
 	ctx := context.Background()
@@ -79,7 +99,7 @@ func main() {
 	// --- Core Services ---
 	userSvc := services.NewUserService(db.Pool)
 	eggSvc := services.NewEggService(db.Pool)
-	commandSvc := services.NewCommandService(db.Pool, eggSvc)
+	commandSvc := services.NewCommandService(db.Pool, eggSvc, cfg.PointsName)
 	quoteSvc := services.NewQuoteService(db.Pool)
 	colourSvc := services.NewColourService(db.Pool)
 	poolSvc := services.NewPoolService(db.Pool)
@@ -150,6 +170,7 @@ func main() {
 	eventSubHandler := twitch.NewEventSubHandler(
 		cfg.Secret, eggSvc, alertSvc, colourSvc, obsSvc,
 		chatClient.Say, wsServer.Broadcast, cfg.MyChannel,
+		cfg.PointsName, cfg.PointsNameSingular, cfg.PointsEmoji,
 	)
 
 	// --- Load Initial Data ---
@@ -198,6 +219,31 @@ func main() {
 				"connections": wsStats.TotalConnections,
 				"unique_ips":  wsStats.UniqueIPs,
 			},
+		})
+	})
+
+	// Distribution debug endpoint
+	interval := time.Duration(cfg.EggUpdateInterval) * time.Millisecond
+	if interval <= 0 {
+		interval = 15 * time.Minute
+	}
+	mux.HandleFunc("GET /api/debug/distribution", func(w http.ResponseWriter, r *http.Request) {
+		lastDistributionMu.RLock()
+		result := lastDistributionResult
+		lastDistributionMu.RUnlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		if result == nil {
+			json.NewEncoder(w).Encode(map[string]any{
+				"message":  "No distribution has run yet",
+				"interval": interval.String(),
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"lastDistribution": result,
+			"interval":         interval.String(),
+			"nextRunApprox":    result.Time.Add(interval).Format(time.RFC3339),
 		})
 	})
 
@@ -271,8 +317,8 @@ func main() {
 	slog.Info("server stopped")
 }
 
-// runPeriodicTasks runs egg distribution, mod/sub sync, TTS cleanup, and emote refresh
-// on a ticker matching the JS eggUpdateInterval (default 15 minutes).
+// runPeriodicTasks runs distribution, mod/sub sync, TTS cleanup, and emote refresh
+// on a ticker matching the eggUpdateInterval (default 15 minutes).
 func runPeriodicTasks(
 	ctx context.Context,
 	cfg *config.Config,
@@ -338,18 +384,27 @@ func runPeriodicTick(
 		} else {
 			botInstance.UpdateChatters(chatters)
 
-			// Distribute eggs to active chatters
-			distributeEggs(ctx, chatters, helix, userSvc, eggSvc)
+			// Distribute points to active chatters
+			result := distributeEggs(ctx, chatters, helix, userSvc, eggSvc, cfg)
+			result.StreamLive = true
+			lastDistributionMu.Lock()
+			lastDistributionResult = result
+			lastDistributionMu.Unlock()
 
 			// Sync subscriber status
-			result := modSyncSvc.SyncSubscribers(ctx, chatters)
-			if result.Success {
+			syncResult := modSyncSvc.SyncSubscribers(ctx, chatters)
+			if syncResult.Success {
 				slog.Info("subscriber sync completed",
-					"synced", result.Synced,
-					"errors", result.Errors,
+					"synced", syncResult.Synced,
+					"errors", syncResult.Errors,
 				)
 			}
 		}
+	} else {
+		// Record that stream was offline
+		lastDistributionMu.Lock()
+		lastDistributionResult = &DistributionResult{Time: time.Now(), StreamLive: false}
+		lastDistributionMu.Unlock()
 	}
 
 	// Sync moderators (always, regardless of stream status)
@@ -370,19 +425,22 @@ func runPeriodicTick(
 	}
 }
 
-// distributeEggs rewards chatters with eggs based on their subscription tier.
+// distributeEggs rewards chatters with points based on their subscription tier.
 func distributeEggs(
 	ctx context.Context,
 	chatters map[string]string,
 	helix *twitch.HelixClient,
 	userSvc *services.UserService,
 	eggSvc *services.EggService,
-) {
-	// Deduplicate by userID (GetChatters maps both displayName and login to same ID)
+	cfg *config.Config,
+) *DistributionResult {
 	seen := make(map[string]bool, len(chatters))
-	var rewarded int
+	result := &DistributionResult{
+		Time:       time.Now(),
+		TierCounts: make(map[string]int),
+	}
 
-	slog.Info("periodic egg distribution starting", "totalChatters", len(chatters))
+	slog.Info("periodic distribution starting", "totalChatters", len(chatters))
 
 	for displayName, userID := range chatters {
 		if seen[userID] {
@@ -392,41 +450,56 @@ func distributeEggs(
 
 		tier, err := helix.GetSubscription(ctx, userID)
 		if err != nil {
-			slog.Warn("sub lookup failed during egg distribution", "user", displayName, "error", err)
-			tier = "0"
+			slog.Warn("sub lookup failed during distribution", "user", displayName, "error", err)
+			tier = "0" // Still reward them at base rate
+			result.SubLookupErrors++
 		}
 
 		// Reward based on tier (Go GetSubscription returns "0", "1", "2", "3")
-		var eggReward int
+		var reward int
 		switch tier {
 		case "1":
-			eggReward = 10
+			reward = 10
 		case "2":
-			eggReward = 15
+			reward = 15
 		case "3":
-			eggReward = 20
+			reward = 20
 		default:
-			eggReward = 5
+			reward = 5
 		}
+		result.TierCounts[tier]++
 
 		// Ensure user exists in database
 		dn := displayName
 		_, err = userSvc.GetOrCreateUser(ctx, userID, strings.ToLower(displayName), &dn)
 		if err != nil {
-			slog.Warn("user creation failed during egg distribution", "user", displayName, "error", err)
+			slog.Warn("user creation failed during distribution", "user", displayName, "error", err)
+			result.UserCreateErrors++
 			continue
 		}
 
-		_, err = eggSvc.EggUpdateCommand(ctx, strings.ToLower(displayName), eggReward, userID)
+		_, err = eggSvc.EggUpdateCommand(ctx, strings.ToLower(displayName), reward, userID, cfg.PointsName, cfg.PointsNameSingular)
 		if err != nil {
-			slog.Warn("egg reward failed", "user", displayName, "error", err)
+			slog.Warn("reward failed", "user", displayName, "error", err)
+			result.RewardErrors++
 			continue
 		}
 
-		rewarded++
+		result.Rewarded++
+		result.TotalDistributed += reward
 	}
 
-	slog.Info("egg distribution completed", "uniqueChatters", len(seen), "rewarded", rewarded)
+	result.UniqueChatters = len(seen)
+	slog.Info("distribution completed",
+		"uniqueChatters", result.UniqueChatters,
+		"rewarded", result.Rewarded,
+		"totalDistributed", result.TotalDistributed,
+		"tiers", result.TierCounts,
+		"subLookupErrors", result.SubLookupErrors,
+		"userCreateErrors", result.UserCreateErrors,
+		"rewardErrors", result.RewardErrors,
+	)
+	return result
 }
 
 // cleanupTTSFiles removes .mp3 files older than 5 minutes from the TTS directory.

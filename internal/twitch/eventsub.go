@@ -41,6 +41,11 @@ type EventSubHandler struct {
 	broadcast func(any)    // broadcasts to WebSocket clients
 	myChannel string
 
+	// Configurable points name (e.g. "eggs"/"egg"/"🥚")
+	pointsName         string
+	pointsNameSingular string
+	pointsEmoji        string
+
 	seenMu  sync.Mutex
 	seenIDs map[string]time.Time // message ID dedup to prevent retries
 }
@@ -55,17 +60,21 @@ func NewEventSubHandler(
 	sendChat func(string),
 	broadcast func(any),
 	myChannel string,
+	pointsName, pointsNameSingular, pointsEmoji string,
 ) *EventSubHandler {
 	return &EventSubHandler{
-		secret:    secret,
-		eggSvc:    eggSvc,
-		alertSvc:  alertSvc,
-		colourSvc: colourSvc,
-		obsSvc:    obsSvc,
-		sendChat:  sendChat,
-		broadcast: broadcast,
-		myChannel: myChannel,
-		seenIDs:   make(map[string]time.Time),
+		secret:             secret,
+		eggSvc:             eggSvc,
+		alertSvc:           alertSvc,
+		colourSvc:          colourSvc,
+		obsSvc:             obsSvc,
+		sendChat:           sendChat,
+		broadcast:          broadcast,
+		myChannel:          myChannel,
+		pointsName:         pointsName,
+		pointsNameSingular: pointsNameSingular,
+		pointsEmoji:        pointsEmoji,
+		seenIDs:            make(map[string]time.Time),
 	}
 }
 
@@ -191,6 +200,28 @@ func (h *EventSubHandler) handleNotification(body []byte, subType string) {
 	}
 }
 
+// enrichWithAlert looks up an alert by title and adds audioUrl/gifUrl/duration to the message map.
+// Used by follow/sub/resub/giftsub handlers to attach on-screen alert config.
+func (h *EventSubHandler) enrichWithAlert(ctx context.Context, msg map[string]any, alertTitle string) {
+	alert, err := h.alertSvc.GetAlert(ctx, alertTitle)
+	if err != nil {
+		slog.Error("failed to get alert config", "error", err, "title", alertTitle)
+		return
+	}
+	if alert == nil {
+		return
+	}
+	if alert.Audio != "" {
+		msg["audioUrl"] = alert.Audio
+	}
+	if alert.GifURL != "" {
+		msg["gifUrl"] = alert.GifURL
+	}
+	if alert.Duration > 0 {
+		msg["duration"] = alert.Duration
+	}
+}
+
 func (h *EventSubHandler) handleSubscription(ctx context.Context, eventData json.RawMessage) {
 	var event struct {
 		UserID    string `json:"user_id"`
@@ -204,14 +235,25 @@ func (h *EventSubHandler) handleSubscription(ctx context.Context, eventData json
 	}
 
 	eggReward := tierToBaseReward(event.Tier)
-	_, err := h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, eggReward, event.UserID)
+	_, err := h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, eggReward, event.UserID, h.pointsName, h.pointsNameSingular)
 	if err != nil {
-		slog.Error("sub egg reward failed", "error", err, "user", event.UserLogin)
+		slog.Error("sub reward failed", "error", err, "user", event.UserLogin)
 		return
 	}
 
-	h.sendChat(fmt.Sprintf("Thank you for subscribing %s! You've received %d eggs! 🥚✨", event.UserName, eggReward))
-	slog.Info("subscription egg reward", "user", event.UserLogin, "tier", event.Tier, "reward", eggReward)
+	h.sendChat(fmt.Sprintf("Thank you for subscribing %s! You've received %d %s! %s",
+		event.UserName, eggReward, h.pointsName, h.pointsEmoji+"✨"))
+	slog.Info("subscription reward", "user", event.UserLogin, "tier", event.Tier, "reward", eggReward)
+
+	// Broadcast to on-screen alerts
+	msg := map[string]any{
+		"type":     "sub",
+		"username": event.UserName,
+		"userId":   event.UserID,
+		"tier":     event.Tier,
+	}
+	h.enrichWithAlert(ctx, msg, "subscribe")
+	h.broadcast(msg)
 }
 
 func (h *EventSubHandler) handleResubscription(ctx context.Context, eventData json.RawMessage) {
@@ -232,22 +274,34 @@ func (h *EventSubHandler) handleResubscription(ctx context.Context, eventData js
 	loyaltyBonus := int(math.Min(float64(event.CumulativeMonths*10), 500))
 	totalReward := baseReward + loyaltyBonus
 
-	_, err := h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, totalReward, event.UserID)
+	_, err := h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, totalReward, event.UserID, h.pointsName, h.pointsNameSingular)
 	if err != nil {
-		slog.Error("resub egg reward failed", "error", err, "user", event.UserLogin)
+		slog.Error("resub reward failed", "error", err, "user", event.UserLogin)
 		return
 	}
 
 	if event.StreakMonths > 0 {
-		h.sendChat(fmt.Sprintf("%s resubscribed for %d months (%d month streak)! You've received %d eggs (%d base + %d loyalty bonus)! 🥚🔥",
-			event.UserName, event.CumulativeMonths, event.StreakMonths, totalReward, baseReward, loyaltyBonus))
+		h.sendChat(fmt.Sprintf("%s resubscribed for %d months (%d month streak)! You've received %d %s (%d base + %d loyalty bonus)! %s",
+			event.UserName, event.CumulativeMonths, event.StreakMonths, totalReward, h.pointsName, baseReward, loyaltyBonus, h.pointsEmoji+"🔥"))
 	} else {
-		h.sendChat(fmt.Sprintf("%s resubscribed for %d months! You've received %d eggs (%d base + %d loyalty bonus)! 🥚✨",
-			event.UserName, event.CumulativeMonths, totalReward, baseReward, loyaltyBonus))
+		h.sendChat(fmt.Sprintf("%s resubscribed for %d months! You've received %d %s (%d base + %d loyalty bonus)! %s",
+			event.UserName, event.CumulativeMonths, totalReward, h.pointsName, baseReward, loyaltyBonus, h.pointsEmoji+"✨"))
 	}
 
-	slog.Info("resub egg reward", "user", event.UserLogin, "tier", event.Tier,
+	slog.Info("resub reward", "user", event.UserLogin, "tier", event.Tier,
 		"months", event.CumulativeMonths, "reward", totalReward)
+
+	// Broadcast to on-screen alerts
+	msg := map[string]any{
+		"type":     "resub",
+		"username": event.UserName,
+		"userId":   event.UserID,
+		"tier":     event.Tier,
+		"months":   event.CumulativeMonths,
+		"streak":   event.StreakMonths,
+	}
+	h.enrichWithAlert(ctx, msg, "resub")
+	h.broadcast(msg)
 }
 
 func (h *EventSubHandler) handleGiftSubscription(ctx context.Context, eventData json.RawMessage) {
@@ -268,17 +322,29 @@ func (h *EventSubHandler) handleGiftSubscription(ctx context.Context, eventData 
 	gifterReward := baseReward * event.Total
 
 	if !event.IsAnonymous && event.UserID != "" {
-		_, err := h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, gifterReward, event.UserID)
+		_, err := h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, gifterReward, event.UserID, h.pointsName, h.pointsNameSingular)
 		if err != nil {
-			slog.Error("gift sub egg reward failed", "error", err, "user", event.UserLogin)
+			slog.Error("gift sub reward failed", "error", err, "user", event.UserLogin)
 		}
-		h.sendChat(fmt.Sprintf("%s gifted %d sub(s)! %s got %d eggs for their generosity! 🎁🥚",
-			event.UserName, event.Total, event.UserName, gifterReward))
+		h.sendChat(fmt.Sprintf("%s gifted %d sub(s)! %s got %d %s for their generosity! 🎁%s",
+			event.UserName, event.Total, event.UserName, gifterReward, h.pointsName, h.pointsEmoji))
 	} else {
-		h.sendChat(fmt.Sprintf("An anonymous gifter gifted %d sub(s)! 🎁🥚", event.Total))
+		h.sendChat(fmt.Sprintf("An anonymous gifter gifted %d sub(s)! 🎁%s", event.Total, h.pointsEmoji))
 	}
 
-	slog.Info("gift sub egg reward", "gifter", event.UserLogin, "total", event.Total, "reward", gifterReward)
+	slog.Info("gift sub reward", "gifter", event.UserLogin, "total", event.Total, "reward", gifterReward)
+
+	// Broadcast to on-screen alerts
+	msg := map[string]any{
+		"type":        "giftsub",
+		"username":    event.UserName,
+		"userId":      event.UserID,
+		"tier":        event.Tier,
+		"total":       event.Total,
+		"isAnonymous": event.IsAnonymous,
+	}
+	h.enrichWithAlert(ctx, msg, "giftsub")
+	h.broadcast(msg)
 }
 
 func (h *EventSubHandler) handleFollow(ctx context.Context, eventData json.RawMessage) {
@@ -293,14 +359,24 @@ func (h *EventSubHandler) handleFollow(ctx context.Context, eventData json.RawMe
 	}
 
 	eggReward := 500
-	_, err := h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, eggReward, event.UserID)
+	_, err := h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, eggReward, event.UserID, h.pointsName, h.pointsNameSingular)
 	if err != nil {
-		slog.Error("follow egg reward failed", "error", err, "user", event.UserLogin)
+		slog.Error("follow reward failed", "error", err, "user", event.UserLogin)
 		return
 	}
 
-	h.sendChat(fmt.Sprintf("Welcome %s! Thanks for following! You've received %d eggs! 🥚💜", event.UserName, eggReward))
-	slog.Info("follow egg reward", "user", event.UserLogin, "reward", eggReward)
+	h.sendChat(fmt.Sprintf("Welcome %s! Thanks for following! You've received %d %s! %s",
+		event.UserName, eggReward, h.pointsName, h.pointsEmoji+"💜"))
+	slog.Info("follow reward", "user", event.UserLogin, "reward", eggReward)
+
+	// Broadcast to on-screen alerts
+	msg := map[string]any{
+		"type":     "follow",
+		"username": event.UserName,
+		"userId":   event.UserID,
+	}
+	h.enrichWithAlert(ctx, msg, "follow")
+	h.broadcast(msg)
 }
 
 func (h *EventSubHandler) handleRedemption(ctx context.Context, eventData json.RawMessage) {
@@ -320,15 +396,15 @@ func (h *EventSubHandler) handleRedemption(ctx context.Context, eventData json.R
 
 	title := event.Reward.Title
 
-	// Handle egg conversion redemptions
+	// Handle egg conversion redemptions (Twitch reward titles — must match exactly)
 	switch title {
 	case "Convert Feed to 100 Eggs":
-		h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, 100, event.UserID)
-		slog.Info("egg conversion", "user", event.UserLogin, "amount", 100)
+		h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, 100, event.UserID, h.pointsName, h.pointsNameSingular)
+		slog.Info("points conversion", "user", event.UserLogin, "amount", 100)
 		return
 	case "Convert Feed to 2000 Eggs":
-		h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, 2000, event.UserID)
-		slog.Info("egg conversion", "user", event.UserLogin, "amount", 2000)
+		h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, 2000, event.UserID, h.pointsName, h.pointsNameSingular)
+		slog.Info("points conversion", "user", event.UserLogin, "amount", 2000)
 		return
 	}
 
@@ -379,7 +455,7 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 			hexVal, err := h.colourSvc.GetHexByName(ctx, randomColour)
 			if err == nil && hexVal != "" {
 				h.sendChat("Your Random Colour is " + randomColour)
-				h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID)
+				h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID, h.pointsName, h.pointsNameSingular)
 				h.obsSvc.ChangeColour(ctx, hexVal)
 				slog.Info("random colour applied", "user", userLogin, "colour", randomColour, "hex", hexVal)
 				return
@@ -406,7 +482,7 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 			hexVal, err := h.colourSvc.GetHexByName(ctx, selected)
 			if err == nil && hexVal != "" {
 				h.sendChat("Your Selected Colour is " + selected)
-				h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID)
+				h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID, h.pointsName, h.pointsNameSingular)
 				h.obsSvc.ChangeColour(ctx, hexVal)
 				slog.Info("selected colour from options", "user", userLogin, "colour", selected)
 				return
@@ -422,7 +498,7 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 		if len(colourNames) > 0 {
 			h.sendChat("According to my list, that colour is " + strings.Join(colourNames, ", "))
 		}
-		h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID)
+		h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID, h.pointsName, h.pointsNameSingular)
 		slog.Info("hex colour applied", "user", userLogin, "hex", hexVal)
 		return
 	}
@@ -430,8 +506,8 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 	// Handle named colour from database
 	hexVal, err := h.colourSvc.GetHexByName(ctx, colourString)
 	if err == nil && hexVal != "" {
-		h.sendChat("That colour is on my list! Congratulations, Here are 4 eggs!")
-		h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID)
+		h.sendChat(fmt.Sprintf("That colour is on my list! Congratulations, Here are 4 %s!", h.pointsName))
+		h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID, h.pointsName, h.pointsNameSingular)
 		h.obsSvc.ChangeColour(ctx, hexVal)
 		slog.Info("named colour applied", "user", userLogin, "colour", colourString, "hex", hexVal)
 		return
@@ -443,15 +519,17 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 	randomHex := hex.EncodeToString(randBytes)
 	colourNames, _ := h.colourSvc.GetByHex(ctx, strings.ToUpper(randomHex))
 	if len(colourNames) > 0 {
-		h.sendChat("That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: Hex: " + randomHex + " Colours: " + strings.Join(colourNames, ", "))
+		h.sendChat(fmt.Sprintf("That colour isn't in my list. You missed out on %s Sadge here is a random colour instead: Hex: %s Colours: %s",
+			h.pointsName, randomHex, strings.Join(colourNames, ", ")))
 	} else {
-		h.sendChat("That colour isn't in my list. You missed out on eggs Sadge here is a random colour instead: " + randomHex)
+		h.sendChat(fmt.Sprintf("That colour isn't in my list. You missed out on %s Sadge here is a random colour instead: %s",
+			h.pointsName, randomHex))
 	}
 	h.obsSvc.ChangeColour(ctx, randomHex)
 	slog.Info("random fallback colour applied", "user", userLogin, "requested", colourString, "applied", randomHex)
 }
 
-// tierToBaseReward converts a Twitch sub tier to egg reward amount.
+// tierToBaseReward converts a Twitch sub tier to reward amount.
 func tierToBaseReward(tier string) int {
 	switch tier {
 	case "2000":

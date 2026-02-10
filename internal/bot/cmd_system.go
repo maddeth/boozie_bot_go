@@ -39,9 +39,10 @@ func (b *Bot) cmdListCommands(ctx context.Context, msg *twitch.ChatMessage) {
 	}
 
 	// Built-in commands
-	message += " | Built-in: !eggs, !topeggs, !quote, !pool, !donate, !pools, " +
-		"!so (moderator), !shoutout (moderator), !createpool (moderator), " +
-		"!deletepool (moderator), !mergeeggs (moderator)"
+	message += fmt.Sprintf(" | Built-in: %s, %s, !quote, !pool, !donate, !pools, "+
+		"!so (moderator), !shoutout (moderator), !createpool (moderator), "+
+		"!deletepool (moderator), %s (moderator)",
+		b.cmdPoints, b.cmdTopPoints, b.cmdMergePoints)
 
 	// Truncate for Twitch's 500 char limit
 	if len(message) > 450 {

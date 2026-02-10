@@ -8,17 +8,17 @@ import (
 	"github.com/maddeth/boozie-bot/internal/twitch"
 )
 
-// cmdMergeEggs handles !mergeeggs <fromUser> <toUser> [reason] (moderator only).
+// cmdMergeEggs handles !merge<points> <fromUser> <toUser> [reason] (moderator only).
 func (b *Bot) cmdMergeEggs(ctx context.Context, msg *twitch.ChatMessage) {
 	perms := b.getPermissions(msg)
 	if !perms.IsModerator {
-		b.sayf("%s - Only moderators can merge user eggs", msg.User.DisplayName)
+		b.sayf("%s - Only moderators can merge user %s", msg.User.DisplayName, b.cfg.PointsName)
 		return
 	}
 
-	args := strings.Fields(strings.TrimSpace(msg.Text[len("!mergeeggs"):]))
+	args := strings.Fields(strings.TrimSpace(msg.Text[len(b.cmdMergePoints):]))
 	if len(args) < 2 {
-		b.sayf("%s - Usage: !mergeeggs <fromUser> <toUser> [reason]", msg.User.DisplayName)
+		b.sayf("%s - Usage: %s <fromUser> <toUser> [reason]", msg.User.DisplayName, b.cmdMergePoints)
 		return
 	}
 
@@ -41,13 +41,13 @@ func (b *Bot) cmdMergeEggs(ctx context.Context, msg *twitch.ChatMessage) {
 			b.sayf("%s - User not found: %s", msg.User.DisplayName, err.Error())
 		} else {
 			slog.Error("merge preview failed", "error", err)
-			b.sayf("%s - Could not merge eggs: %s", msg.User.DisplayName, err.Error())
+			b.sayf("%s - Could not merge %s: %s", msg.User.DisplayName, b.cfg.PointsName, err.Error())
 		}
 		return
 	}
 
 	if preview.Source == nil || preview.Source.EggsAmount == 0 {
-		b.sayf("%s - %s has no eggs to transfer", msg.User.DisplayName, fromUser)
+		b.sayf("%s - %s has no %s to transfer", msg.User.DisplayName, fromUser, b.cfg.PointsName)
 		return
 	}
 
@@ -63,7 +63,7 @@ func (b *Bot) cmdMergeEggs(ctx context.Context, msg *twitch.ChatMessage) {
 			b.sayf("%s - User not found: %s", msg.User.DisplayName, err.Error())
 		} else {
 			slog.Error("merge failed", "error", err, "from", fromUser, "to", toUser)
-			b.sayf("%s - Could not merge eggs: %s", msg.User.DisplayName, err.Error())
+			b.sayf("%s - Could not merge %s: %s", msg.User.DisplayName, b.cfg.PointsName, err.Error())
 		}
 		return
 	}
@@ -74,10 +74,12 @@ func (b *Bot) cmdMergeEggs(ctx context.Context, msg *twitch.ChatMessage) {
 		newTotal += preview.Target.EggsAmount
 	}
 
-	b.sayf("%s successfully merged %s eggs from %s to %s. New total: %s eggs",
+	b.sayf("%s successfully merged %s %s from %s to %s. New total: %s %s",
 		msg.User.DisplayName,
 		formatNumber(result.EggsTransferred),
+		b.cfg.PointsName,
 		result.SourceUsername,
 		result.TargetUsername,
-		formatNumber(newTotal))
+		formatNumber(newTotal),
+		b.cfg.PointsName)
 }

@@ -250,27 +250,28 @@ func (s *EggService) GetUserRank(ctx context.Context, eggsAmount int) (int, erro
 	return rank, err
 }
 
-// EggUpdateCommand is a helper for the chat !addeggs / !removeeggs commands.
+// EggUpdateCommand is a helper for the chat !add<points> / !remove<points> commands.
 // It calls UpdateUserEggs and returns a formatted chat message.
-func (s *EggService) EggUpdateCommand(ctx context.Context, userToUpdate string, eggsToAdd int, twitchUserID string) (string, error) {
+// pointsName/pointsNameSingular control the user-facing name (e.g. "eggs"/"egg").
+func (s *EggService) EggUpdateCommand(ctx context.Context, userToUpdate string, eggsToAdd int, twitchUserID, pointsName, pointsNameSingular string) (string, error) {
 	result, err := s.UpdateUserEggs(ctx, twitchUserID, userToUpdate, eggsToAdd)
 	if errors.Is(err, ErrInsufficientEggs) {
-		return fmt.Sprintf("%s doesn't have enough eggs!", userToUpdate), nil
+		return fmt.Sprintf("%s doesn't have enough %s!", userToUpdate, pointsName), nil
 	}
 	if err != nil {
 		slog.Error("egg update command failed", "error", err, "user", userToUpdate)
 		return "", err
 	}
 
-	eggWord := "eggs"
+	word := pointsName
 	if abs(eggsToAdd) == 1 {
-		eggWord = "egg"
+		word = pointsNameSingular
 	}
 
 	if eggsToAdd >= 0 {
-		return fmt.Sprintf("%s gained %d %s! (Total: %d)", userToUpdate, eggsToAdd, eggWord, result.EggsAmount), nil
+		return fmt.Sprintf("%s gained %d %s! (Total: %d)", userToUpdate, eggsToAdd, word, result.EggsAmount), nil
 	}
-	return fmt.Sprintf("%s lost %d %s! (Total: %d)", userToUpdate, -eggsToAdd, eggWord, result.EggsAmount), nil
+	return fmt.Sprintf("%s lost %d %s! (Total: %d)", userToUpdate, -eggsToAdd, word, result.EggsAmount), nil
 }
 
 func abs(n int) int {

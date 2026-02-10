@@ -56,8 +56,9 @@ type regexEntry struct {
 
 // CommandService manages custom chat commands with in-memory caching and cooldowns.
 type CommandService struct {
-	db       *pgxpool.Pool
-	eggSvc   *EggService
+	db         *pgxpool.Pool
+	eggSvc     *EggService
+	pointsName string // user-facing points name for cost messages
 
 	mu              sync.RWMutex
 	commands        map[string]*Command // all commands keyed by lowercase trigger
@@ -72,14 +73,15 @@ type CommandService struct {
 }
 
 // NewCommandService creates a new command service.
-func NewCommandService(db *pgxpool.Pool, eggSvc *EggService) *CommandService {
+func NewCommandService(db *pgxpool.Pool, eggSvc *EggService, pointsName string) *CommandService {
 	cs := &CommandService{
-		db:           db,
-		eggSvc:       eggSvc,
-		commands:     make(map[string]*Command),
+		db:            db,
+		eggSvc:        eggSvc,
+		pointsName:    pointsName,
+		commands:      make(map[string]*Command),
 		exactCommands: make(map[string]*Command),
-		cooldowns:    make(map[string]time.Time),
-		cacheTimeout: 60 * time.Second,
+		cooldowns:     make(map[string]time.Time),
+		cacheTimeout:  60 * time.Second,
 	}
 	return cs
 }
@@ -237,8 +239,13 @@ func (cs *CommandService) cleanupCooldowns() {
 
 // ProcessResponse replaces placeholders in a command response.
 func (cs *CommandService) ProcessResponse(response string, user *ChatUserInfo) string {
+	nick := user.Username
+	if len(nick) > 4 {
+		nick = nick[:4]
+	}
 	r := strings.NewReplacer(
 		"{user}", "@"+user.Username,
+		"{nick}", nick,
 		"{username}", user.Username,
 		"{displayname}", user.DisplayName,
 		"{channel}", user.Channel,
@@ -304,7 +311,7 @@ func (cs *CommandService) ExecuteCommand(ctx context.Context, trigger string, us
 		_, err := cs.eggSvc.UpdateUserEggs(ctx, user.TwitchUserID, user.Username, -cmd.EggCost)
 		if err != nil {
 			if err == ErrInsufficientEggs {
-				return fmt.Sprintf("@%s You need %d eggs to use this command!", user.Username, cmd.EggCost), "", false
+				return fmt.Sprintf("@%s You need %d %s to use this command!", user.Username, cmd.EggCost, cs.pointsName), "", false
 			}
 			slog.Error("egg cost deduction failed", "error", err, "command", trigger)
 			return "", "", false
