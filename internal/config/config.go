@@ -29,9 +29,9 @@ type Config struct {
 	TTSDirectory      string      `json:"ttsDirectory"`
 	Secret             string      `json:"secret"`             // EventSub webhook HMAC secret
 	WebAddress         string      `json:"webAddress"`         // Public URL for webhook callbacks
-	PointsName         string      `json:"pointsName"`         // Plural points name, e.g. "eggs"
-	PointsNameSingular string      `json:"pointsNameSingular"` // Singular points name, e.g. "egg"
-	PointsEmoji        string      `json:"pointsEmoji"`        // Emoji for points, e.g. "🥚"
+	PointsName         string      `json:"pointsName"`         // Plural name (default: "points", e.g. "eggs", "coins")
+	PointsNameSingular string      `json:"pointsNameSingular"` // Singular name (default: "point", e.g. "egg", "coin")
+	PointsEmoji        string      `json:"pointsEmoji"`        // Emoji (default: "🪙", e.g. "🥚", "💰")
 	OpenAI             *OpenAIConf `json:"openai,omitempty"`
 }
 
@@ -95,13 +95,13 @@ func Load(path string) (*Config, error) {
 		cfg.TTSDirectory = "/home/html/tts"
 	}
 	if cfg.PointsName == "" {
-		cfg.PointsName = "eggs"
+		cfg.PointsName = "points"
 	}
 	if cfg.PointsNameSingular == "" {
-		cfg.PointsNameSingular = "egg"
+		cfg.PointsNameSingular = "point"
 	}
 	if cfg.PointsEmoji == "" {
-		cfg.PointsEmoji = "🥚"
+		cfg.PointsEmoji = "🪙"
 	}
 
 	return &cfg, nil

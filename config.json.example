@@ -1,0 +1,37 @@
+{
+  "_comment_twitch": "Twitch Application credentials — create at https://dev.twitch.tv/console/apps",
+  "clientId": "YOUR_TWITCH_CLIENT_ID",
+  "clientSecret": "YOUR_TWITCH_CLIENT_SECRET",
+
+  "_comment_secret": "Random string used for EventSub webhook HMAC verification (generate any random 20+ char string)",
+  "secret": "YOUR_EVENTSUB_WEBHOOK_SECRET",
+
+  "_comment_obs": "OBS WebSocket connection (optional — for scene/source control)",
+  "obsPassword": "YOUR_OBS_WEBSOCKET_PASSWORD",
+  "obsIP": "ws://localhost:4455",
+
+  "_comment_web": "Public URL where the bot is accessible (used for EventSub webhook callbacks)",
+  "webAddress": "https://yourdomain.com",
+
+  "_comment_ports": "HTTP and WebSocket server ports",
+  "port": 3000,
+  "webSocketPort": 3001,
+
+  "_comment_channel": "Your Twitch channel name (lowercase) and user IDs",
+  "myChannel": "your_channel_name",
+  "myChannelUserId": "YOUR_CHANNEL_USER_ID",
+  "boozieBotUserID": "YOUR_BOT_ACCOUNT_USER_ID",
+
+  "_comment_eggs": "Points distribution interval in milliseconds (900000 = 15 minutes)",
+  "eggUpdateInterval": 900000,
+
+  "_comment_points": "Customise the name of your channel points/currency (defaults: points/point/🪙)",
+  "pointsName": "points",
+  "pointsNameSingular": "point",
+  "pointsEmoji": "🪙",
+
+  "_comment_openai": "OpenAI API key (optional — for ChatGPT integration)",
+  "openai": {
+    "apiKey": "YOUR_OPENAI_API_KEY"
+  }
+}
