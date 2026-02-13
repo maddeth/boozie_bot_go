@@ -41,6 +41,7 @@ type Bot struct {
 	shoutouts *services.ShoutoutService
 	merge     *services.UserMergeService
 	alerts    *services.AlertService
+	emotes    *services.EmoteService
 
 	// chatters maps displayName/username -> twitchUserID for user resolution.
 	chatters sync.Map
@@ -66,6 +67,7 @@ func New(
 	shoutouts *services.ShoutoutService,
 	merge *services.UserMergeService,
 	alerts *services.AlertService,
+	emotes *services.EmoteService,
 ) *Bot {
 	if ws == nil {
 		ws = NopBroadcaster{}
@@ -83,6 +85,7 @@ func New(
 		shoutouts:      shoutouts,
 		merge:          merge,
 		alerts:         alerts,
+		emotes:         emotes,
 		cmdPoints:      "!" + cfg.PointsName,
 		cmdAddPoints:   "!add" + cfg.PointsName,
 		cmdTopPoints:   "!top" + cfg.PointsName,
@@ -97,10 +100,15 @@ func (b *Bot) HandleMessage(msg *twitch.ChatMessage) {
 	lowerText := strings.ToLower(msg.Text)
 
 	// Broadcast chat message to WebSocket clients (for chat view)
+	var parsedMessage any = msg.Text
+	if b.emotes != nil {
+		parsedMessage = b.emotes.ParseMessage(msg.Text)
+	}
 	b.ws.Broadcast(map[string]any{
 		"type":          "chat",
 		"user":          displayName,
 		"message":       msg.Text,
+		"parsedMessage": parsedMessage,
 		"isMod":         msg.User.IsMod,
 		"isVip":         msg.User.IsVIP,
 		"isSubscriber":  msg.User.IsSubscriber,

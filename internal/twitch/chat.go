@@ -39,31 +39,33 @@ type ChatMessage struct {
 // MessageHandler is the callback type for incoming chat messages.
 type MessageHandler func(msg *ChatMessage)
 
-// ChatClient wraps go-twitch-irc with message deduplication and bot-message filtering.
+// TokenFunc returns a fresh OAuth access token for the bot user.
+type TokenFunc func() (string, error)
+
+// ChatClient wraps go-twitch-irc with message deduplication, bot-message filtering,
+// and automatic reconnection with token refresh.
 type ChatClient struct {
-	client    *twitch.Client
+	username  string
 	channel   string
 	botUserID string
+	tokenFunc TokenFunc
 	handler   MessageHandler
 
 	mu             sync.Mutex
+	client         *twitch.Client
 	recentMessages map[string]time.Time
 }
 
 // NewChatClient creates a new IRC chat client.
-func NewChatClient(username, oauthToken, channel, botUserID string) *ChatClient {
-	client := twitch.NewClient(username, "oauth:"+oauthToken)
-
+// tokenFunc is called on each (re)connect to get a fresh OAuth token.
+func NewChatClient(username string, tokenFunc TokenFunc, channel, botUserID string) *ChatClient {
 	cc := &ChatClient{
-		client:         client,
+		username:       username,
 		channel:        channel,
 		botUserID:      botUserID,
+		tokenFunc:      tokenFunc,
 		recentMessages: make(map[string]time.Time),
 	}
-
-	client.OnPrivateMessage(cc.onMessage)
-	client.Join(channel)
-
 	return cc
 }
 
@@ -72,21 +74,67 @@ func (cc *ChatClient) OnMessage(handler MessageHandler) {
 	cc.handler = handler
 }
 
-// Connect starts the IRC connection. Blocks until disconnected.
+// buildClient creates a new go-twitch-irc client with the given token.
+func (cc *ChatClient) buildClient(token string) {
+	client := twitch.NewClient(cc.username, "oauth:"+token)
+	client.OnPrivateMessage(cc.onMessage)
+	client.Join(cc.channel)
+
+	cc.mu.Lock()
+	cc.client = client
+	cc.mu.Unlock()
+}
+
+// Connect connects to Twitch IRC with automatic reconnection and token refresh.
+// Blocks indefinitely, reconnecting on errors with exponential backoff.
 func (cc *ChatClient) Connect() error {
-	slog.Info("connecting to Twitch IRC", "channel", cc.channel)
-	return cc.client.Connect()
+	backoff := 2 * time.Second
+	maxBackoff := 2 * time.Minute
+
+	for {
+		token, err := cc.tokenFunc()
+		if err != nil {
+			slog.Error("failed to get IRC token, retrying", "error", err, "backoff", backoff)
+			time.Sleep(backoff)
+			backoff = min(backoff*2, maxBackoff)
+			continue
+		}
+
+		cc.buildClient(token)
+		slog.Info("connecting to Twitch IRC", "channel", cc.channel)
+
+		err = cc.client.Connect()
+		if err != nil {
+			slog.Error("IRC connection error, reconnecting", "error", err, "backoff", backoff)
+		} else {
+			slog.Warn("IRC connection closed, reconnecting", "backoff", backoff)
+		}
+
+		time.Sleep(backoff)
+		backoff = min(backoff*2, maxBackoff)
+	}
 }
 
 // Disconnect closes the IRC connection.
 func (cc *ChatClient) Disconnect() error {
 	slog.Info("disconnecting from Twitch IRC")
-	return cc.client.Disconnect()
+	cc.mu.Lock()
+	client := cc.client
+	cc.mu.Unlock()
+	if client != nil {
+		return client.Disconnect()
+	}
+	return nil
 }
 
 // Say sends a message to the channel.
 func (cc *ChatClient) Say(message string) {
-	cc.client.Say(cc.channel, message)
+	cc.mu.Lock()
+	client := cc.client
+	cc.mu.Unlock()
+	if client != nil {
+		client.Say(cc.channel, message)
+	}
 }
 
 // onMessage handles incoming IRC messages with deduplication and filtering.

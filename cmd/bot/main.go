@@ -136,12 +136,6 @@ func main() {
 	}()
 
 	// --- IRC Chat Client ---
-	botToken, err := tokenMgr.GetAccessToken(cfg.BoozieBotUserID)
-	if err != nil {
-		slog.Error("failed to get bot access token", "error", err)
-		os.Exit(1)
-	}
-
 	// Resolve bot username from config or Helix API
 	botUsername := cfg.Username
 	if botUsername == "" {
@@ -153,11 +147,14 @@ func main() {
 		botUsername = botUser.Login
 		slog.Info("resolved bot username from Twitch API", "username", botUsername)
 	}
-	chatClient := twitch.NewChatClient(botUsername, botToken, cfg.MyChannel, cfg.BoozieBotUserID)
+	botTokenFunc := func() (string, error) {
+		return tokenMgr.GetAccessToken(cfg.BoozieBotUserID)
+	}
+	chatClient := twitch.NewChatClient(botUsername, botTokenFunc, cfg.MyChannel, cfg.BoozieBotUserID)
 
 	// --- Bot (command router) ---
 	botInstance := bot.New(cfg, chatClient, helixClient, wsServer,
-		userSvc, eggSvc, commandSvc, quoteSvc, poolSvc, shoutoutSvc, userMergeSvc, alertSvc)
+		userSvc, eggSvc, commandSvc, quoteSvc, poolSvc, shoutoutSvc, userMergeSvc, alertSvc, emoteSvc)
 	chatClient.OnMessage(botInstance.HandleMessage)
 
 	go func() {

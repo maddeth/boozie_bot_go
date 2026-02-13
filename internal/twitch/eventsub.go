@@ -456,7 +456,9 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 			if err == nil && hexVal != "" {
 				h.sendChat("Your Random Colour is " + randomColour)
 				h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID, h.pointsName, h.pointsNameSingular)
-				h.obsSvc.ChangeColour(ctx, hexVal)
+				if err := h.obsSvc.ChangeColour(ctx, hexVal); err != nil {
+					slog.Error("OBS colour change failed (random)", "user", userLogin, "hex", hexVal, "error", err)
+				}
 				slog.Info("random colour applied", "user", userLogin, "colour", randomColour, "hex", hexVal)
 				return
 			}
@@ -483,7 +485,9 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 			if err == nil && hexVal != "" {
 				h.sendChat("Your Selected Colour is " + selected)
 				h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID, h.pointsName, h.pointsNameSingular)
-				h.obsSvc.ChangeColour(ctx, hexVal)
+				if err := h.obsSvc.ChangeColour(ctx, hexVal); err != nil {
+					slog.Error("OBS colour change failed (selection)", "user", userLogin, "hex", hexVal, "error", err)
+				}
 				slog.Info("selected colour from options", "user", userLogin, "colour", selected)
 				return
 			}
@@ -493,7 +497,9 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 	// Handle direct hex input
 	if hexRegex.MatchString(strings.TrimSpace(colourString)) {
 		hexVal := strings.TrimSpace(colourString)
-		h.obsSvc.ChangeColour(ctx, hexVal)
+		if err := h.obsSvc.ChangeColour(ctx, hexVal); err != nil {
+			slog.Error("OBS colour change failed (hex)", "user", userLogin, "hex", hexVal, "error", err)
+		}
 		colourNames, _ := h.colourSvc.GetByHex(ctx, strings.ToUpper(hexVal))
 		if len(colourNames) > 0 {
 			h.sendChat("According to my list, that colour is " + strings.Join(colourNames, ", "))
@@ -508,7 +514,9 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 	if err == nil && hexVal != "" {
 		h.sendChat(fmt.Sprintf("That colour is on my list! Congratulations, Here are 4 %s!", h.pointsName))
 		h.eggSvc.EggUpdateCommand(ctx, userLogin, 4, userID, h.pointsName, h.pointsNameSingular)
-		h.obsSvc.ChangeColour(ctx, hexVal)
+		if err := h.obsSvc.ChangeColour(ctx, hexVal); err != nil {
+			slog.Error("OBS colour change failed (named)", "user", userLogin, "hex", hexVal, "error", err)
+		}
 		slog.Info("named colour applied", "user", userLogin, "colour", colourString, "hex", hexVal)
 		return
 	}
@@ -525,7 +533,9 @@ func (h *EventSubHandler) handleColourChange(ctx context.Context, userInput, use
 		h.sendChat(fmt.Sprintf("That colour isn't in my list. You missed out on %s Sadge here is a random colour instead: %s",
 			h.pointsName, randomHex))
 	}
-	h.obsSvc.ChangeColour(ctx, randomHex)
+	if err := h.obsSvc.ChangeColour(ctx, randomHex); err != nil {
+		slog.Error("OBS colour change failed (fallback)", "user", userLogin, "hex", randomHex, "error", err)
+	}
 	slog.Info("random fallback colour applied", "user", userLogin, "requested", colourString, "applied", randomHex)
 }
 

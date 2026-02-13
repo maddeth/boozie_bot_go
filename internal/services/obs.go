@@ -165,6 +165,7 @@ func (s *OBSService) setSourceFilterSettings(ctx context.Context, conn *websocke
 	if err := s.readJSON(ctx, conn, &resp); err != nil {
 		return fmt.Errorf("reading response: %w", err)
 	}
+
 	if resp.Op != 7 {
 		return fmt.Errorf("expected OpCode 7 (RequestResponse), got %d", resp.Op)
 	}

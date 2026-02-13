@@ -302,7 +302,7 @@ const chatHTML = `<!DOCTYPE html>
                         return escapes[match];
                     });
                 }
-            }).join('');
+            }).join(' ');
         }
 
         function connectWebSocket() {
