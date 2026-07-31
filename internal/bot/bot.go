@@ -51,6 +51,7 @@ type Bot struct {
 	// !sr cooldowns (only allocated when Spotify is enabled).
 	srUserCooldown  *cooldownMap // per-user rate limit
 	srTrackCooldown *cooldownMap // per-track duplicate-prevention window
+	songLog         *songRequestLog // tracks who requested each song
 
 	// Precomputed command prefixes from config (e.g. "!eggs", "!addeggs")
 	cmdPoints      string
@@ -102,6 +103,7 @@ func New(
 	if spotifySvc != nil {
 		b.srUserCooldown = newCooldownMap()
 		b.srTrackCooldown = newCooldownMap()
+		b.songLog = newSongRequestLog()
 	}
 	return b
 }

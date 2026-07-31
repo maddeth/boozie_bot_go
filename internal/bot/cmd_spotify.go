@@ -61,6 +61,54 @@ func (c *cooldownMap) mark(key string) {
 	c.last[key] = time.Now()
 }
 
+// songRequestEntry records who requested a track and when.
+type songRequestEntry struct {
+	Requester    string    // Twitch display name
+	RequestedAt  time.Time // When the !sr was accepted
+}
+
+// songRequestLog tracks track ID -> requester info for !song/!songqueue display.
+// Entries expire after 2 hours to avoid unbounded growth.
+type songRequestLog struct {
+	mu      sync.RWMutex
+	entries map[string]songRequestEntry // trackID -> entry
+}
+
+func newSongRequestLog() *songRequestLog {
+	return &songRequestLog{entries: make(map[string]songRequestEntry)}
+}
+
+func (l *songRequestLog) record(trackID, requester string) {
+	if trackID == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.entries[trackID] = songRequestEntry{
+		Requester:   requester,
+		RequestedAt: time.Now(),
+	}
+}
+
+func (l *songRequestLog) lookup(trackID string) (string, bool) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	e, ok := l.entries[trackID]
+	return e.Requester, ok
+}
+
+// cleanup removes entries older than maxAge.
+func (l *songRequestLog) cleanup(maxAge time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	cutoff := time.Now().Add(-maxAge)
+	for id, e := range l.entries {
+		if e.RequestedAt.Before(cutoff) {
+			delete(l.entries, id)
+		}
+	}
+}
+
 // cmdSongRequest handles !sr <query> - adds a track to the broadcaster's Spotify queue.
 func (b *Bot) cmdSongRequest(ctx context.Context, msg *twitch.ChatMessage) {
 	if b.spotifySvc == nil || b.cfg.Spotify == nil || !b.cfg.Spotify.Enabled {
@@ -162,6 +210,11 @@ func (b *Bot) cmdSongRequest(ctx context.Context, msg *twitch.ChatMessage) {
 		b.srTrackCooldown.mark(track.ID)
 	}
 
+	// Record the requester so !song/!songqueue can show who requested it.
+	if b.songLog != nil {
+		b.songLog.record(track.ID, msg.User.DisplayName)
+	}
+
 	b.sayf("🎵 Queued for %s: %s - %s", msg.User.DisplayName, track.Name, strings.Join(track.Artists, ", "))
 }
 
@@ -178,6 +231,12 @@ func (b *Bot) cmdSong(ctx context.Context, msg *twitch.ChatMessage) {
 	}
 
 	artists := strings.Join(np.Track.Artists, ", ")
+	if b.songLog != nil {
+		if requester, ok := b.songLog.lookup(np.Track.ID); ok {
+			b.sayf("🎵 Now playing: %s - %s (requested by %s)", np.Track.Name, artists, requester)
+			return
+		}
+	}
 	b.sayf("🎵 Now playing: %s - %s", np.Track.Name, artists)
 }
 
@@ -214,6 +273,13 @@ func (b *Bot) cmdSongQueue(ctx context.Context, msg *twitch.ChatMessage) {
 		sb.WriteString(currentlyPlaying.Name)
 		sb.WriteString(" - ")
 		sb.WriteString(strings.Join(currentlyPlaying.Artists, ", "))
+		if b.songLog != nil {
+			if requester, ok := b.songLog.lookup(currentlyPlaying.ID); ok {
+				sb.WriteString(" (req by ")
+				sb.WriteString(requester)
+				sb.WriteString(")")
+			}
+		}
 	}
 
 	shown := 0
@@ -227,6 +293,13 @@ func (b *Bot) cmdSongQueue(ctx context.Context, msg *twitch.ChatMessage) {
 			sb.WriteString(" | ")
 		}
 		sb.WriteString(fmt.Sprintf("NEXT%d: %s - %s", shown+1, t.Name, strings.Join(t.Artists, ", ")))
+		if b.songLog != nil {
+			if requester, ok := b.songLog.lookup(t.ID); ok {
+				sb.WriteString(" (req by ")
+				sb.WriteString(requester)
+				sb.WriteString(")")
+			}
+		}
 		shown++
 	}
 
