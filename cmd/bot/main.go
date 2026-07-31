@@ -19,6 +19,7 @@ import (
 	"github.com/maddeth/boozie-bot/internal/database"
 	"github.com/maddeth/boozie-bot/internal/handlers"
 	"github.com/maddeth/boozie-bot/internal/services"
+	"github.com/maddeth/boozie-bot/internal/spotify"
 	"github.com/maddeth/boozie-bot/internal/twitch"
 	ws "github.com/maddeth/boozie-bot/internal/websocket"
 )
@@ -39,6 +40,11 @@ type DistributionResult struct {
 var (
 	lastDistributionMu     sync.RWMutex
 	lastDistributionResult *DistributionResult
+
+	// streamWasLive tracks the last observed stream status so the periodic
+	// poll can detect the online->offline edge and reset per-stream state.
+	// Only touched from the single periodic-tick goroutine (and once at startup).
+	streamWasLive bool
 )
 
 func main() {
@@ -135,6 +141,28 @@ func main() {
 		}
 	}()
 
+	// --- Spotify (optional) ---
+	var (
+		spotifyTokens *spotify.TokenManager
+		spotifySvc    *services.SpotifyService
+	)
+	spotifyEnabled := cfg.Spotify != nil && cfg.Spotify.Enabled && cfg.Spotify.ClientID != "" && cfg.Spotify.ClientSecret != ""
+	if spotifyEnabled {
+		spotifyTokens = spotify.NewTokenManager(cfg.Spotify.ClientID, cfg.Spotify.ClientSecret, cfg.Spotify.RedirectURI)
+		if err := spotifyTokens.LoadTokenFile(); err != nil {
+			slog.Error("failed to load spotify token file", "error", err)
+		}
+		spotifySettings := services.NewSpotifyRuntimeSettings()
+		spotifySvc = services.NewSpotifyService(spotify.NewClient(spotifyTokens), wsServer, spotifySettings)
+		slog.Info("spotify integration enabled",
+			"songRequestCost", cfg.Spotify.SongRequestCost,
+			"cooldownSeconds", cfg.Spotify.SongRequestCooldownSeconds,
+			"authorized", spotifyTokens.IsAuthorized(),
+		)
+	} else {
+		slog.Info("spotify integration disabled (set spotify.enabled=true and credentials in config to enable)")
+	}
+
 	// --- IRC Chat Client ---
 	// Resolve bot username from config or Helix API
 	botUsername := cfg.Username
@@ -154,7 +182,7 @@ func main() {
 
 	// --- Bot (command router) ---
 	botInstance := bot.New(cfg, chatClient, helixClient, wsServer,
-		userSvc, eggSvc, commandSvc, quoteSvc, poolSvc, shoutoutSvc, userMergeSvc, alertSvc, emoteSvc)
+		userSvc, eggSvc, commandSvc, quoteSvc, poolSvc, shoutoutSvc, userMergeSvc, alertSvc, emoteSvc, spotifySvc)
 	chatClient.OnMessage(botInstance.HandleMessage)
 
 	go func() {
@@ -190,6 +218,7 @@ func main() {
 
 	// Check initial stream status
 	if live, err := helixClient.IsStreamLive(ctx); err == nil {
+		streamWasLive = live
 		if live {
 			slog.Info("stream status check", "status", "online")
 		} else {
@@ -244,6 +273,80 @@ func main() {
 		})
 	})
 
+	// Test alert endpoint — broadcasts a fake event to WebSocket clients
+	mux.HandleFunc("POST /api/debug/test-alert", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Type string `json:"type"` // follow, sub, resub, giftsub, redemption
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		var msg map[string]any
+		switch body.Type {
+		case "follow":
+			msg = map[string]any{
+				"type":     "follow",
+				"username": "TestUser",
+				"userId":   "0",
+			}
+		case "sub":
+			msg = map[string]any{
+				"type":     "sub",
+				"username": "TestUser",
+				"userId":   "0",
+				"tier":     "1000",
+			}
+		case "resub":
+			msg = map[string]any{
+				"type":     "resub",
+				"username": "TestUser",
+				"userId":   "0",
+				"tier":     "1000",
+				"months":   12,
+				"streak":   6,
+			}
+		case "giftsub":
+			msg = map[string]any{
+				"type":        "giftsub",
+				"username":    "TestUser",
+				"userId":      "0",
+				"tier":        "1000",
+				"total":       5,
+				"isAnonymous": false,
+			}
+		case "redemption":
+			msg = map[string]any{
+				"type":        "redemption",
+				"rewardTitle": "Test Redemption",
+				"user":        "TestUser",
+				"userInput":   "test input",
+			}
+		default:
+			http.Error(w, "type must be one of: follow, sub, resub, giftsub, redemption", http.StatusBadRequest)
+			return
+		}
+
+		// Enrich with alert config if available
+		alert, err := alertSvc.GetAlert(r.Context(), body.Type)
+		if err == nil && alert != nil {
+			if alert.Audio != "" {
+				msg["audioUrl"] = alert.Audio
+			}
+			if alert.GifURL != "" {
+				msg["gifUrl"] = alert.GifURL
+			}
+			if alert.Duration > 0 {
+				msg["duration"] = alert.Duration
+			}
+		}
+
+		wsServer.BroadcastImmediate(msg)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "sent": msg})
+	})
+
 	// Register API handlers
 	handlers.NewAlertHandler(alertSvc, authMW).Register(mux)
 	handlers.NewEggHandler(eggSvc, userSvc, authMW).Register(mux)
@@ -256,6 +359,7 @@ func main() {
 	handlers.NewUserRoleHandler(userSvc, db.Pool, authMW).Register(mux)
 	handlers.NewWebhookHandler(eventSubHandler, tokenMgr, cfg).Register(mux)
 	handlers.NewStaticHandler(cfg.TTSDirectory).Register(mux)
+	handlers.NewSpotifyHandler(spotifyTokens, spotifySvc, authMW, spotifyEnabled).Register(mux)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Port,
@@ -277,6 +381,15 @@ func main() {
 	// --- Start Periodic Tasks ---
 	periodicCtx, periodicCancel := context.WithCancel(context.Background())
 	go runPeriodicTasks(periodicCtx, cfg, helixClient, botInstance, userSvc, eggSvc, emoteSvc, modSyncSvc, wsServer, eventSubHandler)
+
+	// Drain the auto-shoutout retry queue on its own cadence. Twitch allows one
+	// shoutout per 2 minutes per channel, so retry at that interval.
+	go runShoutoutRetryLoop(periodicCtx, botInstance)
+
+	// --- Start Spotify polling (if enabled) ---
+	if spotifySvc != nil {
+		go spotifySvc.Run(periodicCtx)
+	}
 
 	slog.Info("bot started",
 		"port", cfg.Port,
@@ -349,6 +462,28 @@ func runPeriodicTasks(
 	}
 }
 
+// runShoutoutRetryLoop periodically retries auto-shoutouts that previously
+// failed (e.g. were rate limited). Twitch permits one shoutout per 2 minutes
+// per channel, so it polls at that cadence.
+func runShoutoutRetryLoop(ctx context.Context, botInstance *bot.Bot) {
+	const retryInterval = 2 * time.Minute
+
+	ticker := time.NewTicker(retryInterval)
+	defer ticker.Stop()
+
+	slog.Info("shoutout retry loop started", "interval", retryInterval.String())
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("shoutout retry loop stopped")
+			return
+		case <-ticker.C:
+			botInstance.RetryPendingShoutouts(ctx)
+		}
+	}
+}
+
 func runPeriodicTick(
 	ctx context.Context,
 	cfg *config.Config,
@@ -370,7 +505,17 @@ func runPeriodicTick(
 	// Check stream status
 	live, err := helix.IsStreamLive(ctx)
 	if err != nil {
+		// On a failed check, leave streamWasLive untouched so a transient
+		// Helix error doesn't get mistaken for the stream going offline
+		// (which would wrongly reset the per-stream shoutout tracking).
 		slog.Error("stream status check failed", "error", err)
+	} else {
+		// Reset per-stream shoutout tracking on the online->offline edge so
+		// regulars become eligible again on the next stream.
+		if streamWasLive && !live {
+			botInstance.ResetStreamShoutouts()
+		}
+		streamWasLive = live
 	}
 
 	if live {

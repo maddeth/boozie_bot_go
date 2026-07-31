@@ -132,7 +132,11 @@ func (h *EventSubHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 		var challenge struct {
 			Challenge string `json:"challenge"`
 		}
-		json.Unmarshal(body, &challenge)
+		if err := json.Unmarshal(body, &challenge); err != nil {
+			slog.Error("failed to parse verification challenge", "error", err)
+			http.Error(w, "invalid challenge payload", http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(challenge.Challenge))
@@ -395,6 +399,15 @@ func (h *EventSubHandler) handleRedemption(ctx context.Context, eventData json.R
 	}
 
 	title := event.Reward.Title
+
+	// Broadcast to teleprompter chat view
+	redemptionMsg := map[string]any{
+		"type":        "redemption",
+		"rewardTitle": title,
+		"user":        event.UserName,
+		"userInput":   event.UserInput,
+	}
+	h.broadcast(redemptionMsg)
 
 	// Handle egg conversion redemptions (Twitch reward titles — must match exactly)
 	switch title {

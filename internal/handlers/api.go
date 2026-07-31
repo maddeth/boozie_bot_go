@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/maddeth/boozie-bot/internal/auth"
 	"github.com/maddeth/boozie-bot/internal/services"
@@ -27,6 +28,7 @@ func (h *ColourHandler) Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/colours/username", h.auth.AuthenticateToken(http.HandlerFunc(h.coloursByUsername)))
 	mux.Handle("POST /api/colours/hex", h.auth.AuthenticateToken(http.HandlerFunc(h.colourByHex)))
 	mux.Handle("POST /api/colours/colourName", h.auth.AuthenticateToken(http.HandlerFunc(h.hexByColourName)))
+	mux.Handle("POST /api/colours/search", h.auth.AuthenticateToken(http.HandlerFunc(h.searchByName)))
 	mux.Handle("GET /api/colours/getLastColour", h.auth.AuthenticateToken(http.HandlerFunc(h.getLastColour)))
 
 	// Test endpoint
@@ -85,10 +87,14 @@ func (h *ColourHandler) addColour(w http.ResponseWriter, r *http.Request) {
 
 	err := h.colours.Add(r.Context(), colour, hex, username)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]string{"error": err.Error()})
+		if strings.Contains(err.Error(), "already exists") {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		logAndError(w, "Failed to add colour", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Colour added successfully"})
+	writeJSON(w, http.StatusCreated, map[string]string{"message": "Colour added successfully"})
 }
 
 func (h *ColourHandler) myColours(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +127,10 @@ func (h *ColourHandler) coloursByUsername(w http.ResponseWriter, r *http.Request
 	var body struct {
 		Username string `json:"username"`
 	}
-	readJSON(r, &body)
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
 
 	username := body.Username
 	if username == "" {
@@ -141,13 +150,13 @@ func (h *ColourHandler) colourByHex(w http.ResponseWriter, r *http.Request) {
 		Hex string `json:"hex"`
 	}
 	if err := readJSON(r, &body); err != nil || body.Hex == "" {
-		writeJSON(w, http.StatusOK, map[string]string{"Error": "hex not supplied"})
+		writeError(w, http.StatusBadRequest, "hex not supplied")
 		return
 	}
 
 	hex := sanitizeHexInput(body.Hex)
 	if len(hex) != 6 {
-		writeJSON(w, http.StatusOK, map[string]string{"Error": "invalid hex value"})
+		writeError(w, http.StatusBadRequest, "invalid hex value")
 		return
 	}
 
@@ -164,7 +173,7 @@ func (h *ColourHandler) hexByColourName(w http.ResponseWriter, r *http.Request) 
 		Colour string `json:"colour"`
 	}
 	if err := readJSON(r, &body); err != nil || body.Colour == "" {
-		writeJSON(w, http.StatusOK, map[string]string{"Error": "hex not supplied"})
+		writeError(w, http.StatusBadRequest, "colour name not supplied")
 		return
 	}
 
@@ -179,6 +188,27 @@ func (h *ColourHandler) hexByColourName(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, hex)
+}
+
+func (h *ColourHandler) searchByName(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Colour string `json:"colour"`
+	}
+	if err := readJSON(r, &body); err != nil || body.Colour == "" {
+		writeJSON(w, http.StatusOK, []services.Colour{})
+		return
+	}
+
+	colour := sanitizeColourInput(body.Colour)
+	colours, err := h.colours.SearchByName(r.Context(), colour)
+	if err != nil {
+		logAndError(w, "Failed to search colours", err)
+		return
+	}
+	if colours == nil {
+		colours = []services.Colour{}
+	}
+	writeJSON(w, http.StatusOK, colours)
 }
 
 func (h *ColourHandler) getLastColour(w http.ResponseWriter, r *http.Request) {

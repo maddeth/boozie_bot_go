@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -102,7 +104,8 @@ func (s *PoolService) CreatePool(ctx context.Context, poolName, description, cre
 	).Scan(&p.ID, &p.PoolName, &p.PoolNameSanitised, &p.Description, &p.EggsAmount, &p.IsActive,
 		&p.CreatedByTwitchID, &p.CreatedByUsername, &p.CreatedAt)
 	if err != nil {
-		if strings.Contains(err.Error(), "23505") {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return nil, fmt.Errorf("pool %q already exists", sanitised)
 		}
 		return nil, err

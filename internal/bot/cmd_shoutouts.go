@@ -39,7 +39,11 @@ func (b *Bot) cmdShoutout(ctx context.Context, msg *twitch.ChatMessage) {
 		return
 	}
 
-	_ = b.helix.SendShoutout(ctx, user.ID)
+	if err := b.helix.SendShoutout(ctx, user.ID); err != nil {
+		slog.Error("shoutout API call failed", "target", targetUsername, "error", err)
+	} else {
+		slog.Info("shoutout sent", "by", msg.User.DisplayName, "target", targetUsername)
+	}
 	b.shoutouts.MarkShoutedOut(user.ID)
 
 	desc := user.BroadcasterType
@@ -48,5 +52,4 @@ func (b *Bot) cmdShoutout(ctx context.Context, msg *twitch.ChatMessage) {
 	}
 	b.sayf("Check out %s! They were last streaming %s! Follow them at twitch.tv/%s",
 		user.DisplayName, desc, user.Login)
-	slog.Info("shoutout sent", "by", msg.User.DisplayName, "target", targetUsername)
 }

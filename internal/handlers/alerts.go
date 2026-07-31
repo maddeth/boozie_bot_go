@@ -1,9 +1,10 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
-	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/maddeth/boozie-bot/internal/auth"
 	"github.com/maddeth/boozie-bot/internal/services"
 )
@@ -73,7 +74,8 @@ func (h *AlertHandler) create(w http.ResponseWriter, r *http.Request) {
 
 	alert, err := h.alerts.CreateAlert(r.Context(), body.EventTitle, body.AudioURL, body.GifURL, body.DurationMS)
 	if err != nil {
-		if strings.Contains(err.Error(), "23505") {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			writeError(w, http.StatusConflict, "Alert with this event title already exists")
 			return
 		}

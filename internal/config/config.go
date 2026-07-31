@@ -33,10 +33,23 @@ type Config struct {
 	PointsNameSingular string      `json:"pointsNameSingular"` // Singular name (default: "point", e.g. "egg", "coin")
 	PointsEmoji        string      `json:"pointsEmoji"`        // Emoji (default: "🪙", e.g. "🥚", "💰")
 	OpenAI             *OpenAIConf `json:"openai,omitempty"`
+	Spotify            *SpotifyConf `json:"spotify,omitempty"`
 }
 
 type OpenAIConf struct {
 	APIKey string `json:"apiKey"`
+}
+
+// SpotifyConf holds Spotify Web API integration settings.
+type SpotifyConf struct {
+	Enabled                    bool   `json:"enabled"`
+	ClientID                   string `json:"clientId"`
+	ClientSecret               string `json:"clientSecret"`
+	RedirectURI                string `json:"redirectUri"`
+	SongRequestCost            int    `json:"songRequestCost"`            // eggs charged per !sr (default: 100)
+	SongRequestCooldownSeconds int    `json:"songRequestCooldownSeconds"` // per-user cooldown (default: 60)
+	MaxTrackDurationSeconds    int    `json:"maxTrackDurationSeconds"`    // reject longer tracks (default: 600 = 10 min, 0 = no limit)
+	DuplicateCooldownSeconds   int    `json:"duplicateCooldownSeconds"`   // reject same track if queued in last N seconds (default: 3600 = 60 min, 0 = no limit)
 }
 
 // rawConfig is the intermediate struct for JSON unmarshalling.
@@ -102,6 +115,20 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.PointsEmoji == "" {
 		cfg.PointsEmoji = "🪙"
+	}
+	if cfg.Spotify != nil && cfg.Spotify.Enabled {
+		if cfg.Spotify.SongRequestCost == 0 {
+			cfg.Spotify.SongRequestCost = 100
+		}
+		if cfg.Spotify.SongRequestCooldownSeconds == 0 {
+			cfg.Spotify.SongRequestCooldownSeconds = 60
+		}
+		if cfg.Spotify.MaxTrackDurationSeconds == 0 {
+			cfg.Spotify.MaxTrackDurationSeconds = 600
+		}
+		if cfg.Spotify.DuplicateCooldownSeconds == 0 {
+			cfg.Spotify.DuplicateCooldownSeconds = 3600
+		}
 	}
 
 	return &cfg, nil

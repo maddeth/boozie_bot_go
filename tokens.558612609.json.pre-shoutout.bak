@@ -1,0 +1,13 @@
+{
+    "accessToken": "emzz2xhr1r8y2abcruesj8a74rfy23",
+    "refreshToken": "fm0emxrfw2ookslmb0k4r414fdf9sz0qp6ngsn68r9w70u4ory",
+    "expiresIn": 13869,
+    "obtainmentTimestamp": 1770671071059,
+    "scope": [
+        "channel:read:subscriptions",
+        "chat:edit",
+        "chat:read",
+        "moderator:read:chatters",
+        "user:read:subscriptions"
+    ]
+}

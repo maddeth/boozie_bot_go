@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -181,7 +181,8 @@ func (s *ColourService) Add(ctx context.Context, colourName, hex, username strin
 		colourName, hex, username,
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "23505") {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return fmt.Errorf("colour %q already exists", colourName)
 		}
 		slog.Error("failed to add colour", "error", err, "colour", colourName)

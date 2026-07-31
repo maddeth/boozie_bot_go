@@ -28,6 +28,7 @@ type User struct {
 	SupabaseUserID  string `json:"supabase_user_id"`
 	IsModerator     bool   `json:"is_moderator"`
 	IsAdmin         bool   `json:"is_admin"`
+	IsSuperAdmin    bool   `json:"is_superadmin"`
 }
 
 // Middleware provides HTTP middleware for authentication and authorization.
@@ -187,6 +188,58 @@ func (m *Middleware) RequireAdminRole(next http.Handler) http.Handler {
 	})
 }
 
+
+// RequireSuperAdminRole checks that the authenticated user has superadmin privileges.
+// Must be used after AuthenticateToken.
+func (m *Middleware) RequireSuperAdminRole(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims := GetClaims(r.Context())
+		if claims == nil || claims.Subject == "" {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{
+				"error":   "Unauthorized",
+				"message": "Authentication required",
+			})
+			return
+		}
+
+		user, err := m.getUserBySupabaseID(r.Context(), claims.Subject)
+		if err != nil {
+			slog.Error("error checking superadmin role",
+				"error", err,
+				"user_id", claims.Subject,
+			)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error":   "Internal server error",
+				"message": "Failed to verify permissions",
+			})
+			return
+		}
+
+		if user == nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{
+				"error":   "Forbidden",
+				"message": "User not found",
+			})
+			return
+		}
+
+		if !user.IsSuperAdmin {
+			slog.Warn("non-superadmin attempted to access superadmin endpoint",
+				"twitch_user_id", user.TwitchUserID,
+				"username", user.Username,
+				"endpoint", r.URL.Path,
+			)
+			writeJSON(w, http.StatusForbidden, map[string]string{
+				"error":   "Forbidden",
+				"message": "Superadmin privileges required",
+			})
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), userKey, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
 // getUserBySupabaseID looks up a user by their Supabase UUID.
 // Matches the JS getUserBySupabaseId function.
 func (m *Middleware) getUserBySupabaseID(ctx context.Context, supabaseUserID string) (*User, error) {
@@ -195,7 +248,7 @@ func (m *Middleware) getUserBySupabaseID(ctx context.Context, supabaseUserID str
 		`SELECT id, twitch_user_id, username, supabase_user_id, is_moderator, is_admin
 		 FROM users WHERE supabase_user_id = $1`,
 		supabaseUserID,
-	).Scan(&user.ID, &user.TwitchUserID, &user.Username, &user.SupabaseUserID, &user.IsModerator, &user.IsAdmin)
+	).Scan(&user.ID, &user.TwitchUserID, &user.Username, &user.SupabaseUserID, &user.IsModerator, &user.IsAdmin, &user.IsSuperAdmin)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

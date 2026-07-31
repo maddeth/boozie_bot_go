@@ -33,5 +33,17 @@
   "_comment_openai": "OpenAI API key (optional — for ChatGPT integration)",
   "openai": {
     "apiKey": "YOUR_OPENAI_API_KEY"
+  },
+
+  "_comment_spotify": "Spotify Web API (optional — for now-playing overlay + !sr song requests). Requires Spotify Premium. Register an app at https://developer.spotify.com/dashboard, set redirectUri there to match. Then visit https://yourdomain.com/api/spotify/auth once as broadcaster to authorize.",
+  "spotify": {
+    "enabled": false,
+    "clientId": "YOUR_SPOTIFY_CLIENT_ID",
+    "clientSecret": "YOUR_SPOTIFY_CLIENT_SECRET",
+    "redirectUri": "https://yourdomain.com/api/spotify/callback",
+    "songRequestCost": 100,
+    "songRequestCooldownSeconds": 60,
+    "maxTrackDurationSeconds": 600,
+    "duplicateCooldownSeconds": 3600
   }
 }

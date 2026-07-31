@@ -47,23 +47,29 @@ func pathParam(r *http.Request, name string) string {
 	return r.PathValue(name)
 }
 
-// setCORS sets common CORS headers for API responses.
-func setCORS(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+// allowedOrigins is the set of origins permitted to make cross-origin requests.
+var allowedOrigins = map[string]bool{
+	"https://maddeth.com":                true,
+	"https://www.maddeth.com":            true,
+	"https://boozie-bot-web.pages.dev":   true,
+	"https://boozie-bot.com":             true,
 }
 
-// handleOptions responds to CORS preflight requests.
-func handleOptions(w http.ResponseWriter, r *http.Request) {
-	setCORS(w)
-	w.WriteHeader(http.StatusNoContent)
+// setCORS sets CORS headers if the request origin is allowed.
+func setCORS(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if allowedOrigins[origin] {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+	}
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 }
 
 // CORSMiddleware wraps a handler with CORS headers.
 func CORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		setCORS(w)
+		setCORS(w, r)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

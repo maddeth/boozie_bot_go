@@ -42,8 +42,9 @@ func (h *UserRoleHandler) Register(mux *http.ServeMux) {
 	// Public
 	mux.HandleFunc("GET /api/user/check/{twitchUserId}", h.checkModerator)
 
-	// Admin-protected
-	mux.Handle("PUT /api/user/admin/{username}", h.auth.AuthenticateToken(http.HandlerFunc(h.updateAdmin)))
+	// Superadmin-protected
+	mux.Handle("PUT /api/user/admin/{username}", h.auth.AuthenticateToken(h.auth.RequireSuperAdminRole(http.HandlerFunc(h.updateAdmin))))
+	mux.Handle("PUT /api/user/moderator/{username}", h.auth.AuthenticateToken(h.auth.RequireSuperAdminRole(http.HandlerFunc(h.updateModerator))))
 }
 
 func (h *UserRoleHandler) me(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +69,7 @@ func (h *UserRoleHandler) me(w http.ResponseWriter, r *http.Request) {
 		"roles": map[string]bool{
 			"isModerator":  user.IsModerator,
 			"isAdmin":      user.IsAdmin,
-			"isSuperAdmin": false, // superadmin not in User struct yet
+			"isSuperAdmin": user.IsSuperAdmin,
 			"isSubscriber": user.IsSubscriber,
 		},
 		"subscriptionTier": user.SubscriptionTier,
@@ -129,6 +130,7 @@ func (h *UserRoleHandler) meRefresh(w http.ResponseWriter, r *http.Request) {
 			"roles": map[string]bool{
 				"isModerator":  user.IsModerator,
 				"isAdmin":      user.IsAdmin,
+				"isSuperAdmin": user.IsSuperAdmin,
 				"isSubscriber": user.IsSubscriber,
 			},
 			"subscriptionTier": user.SubscriptionTier,
@@ -178,8 +180,8 @@ func (h *UserRoleHandler) admins(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.db.Query(r.Context(),
-		`SELECT username, display_name, is_moderator, is_admin, last_seen
-		 FROM users WHERE is_admin = true ORDER BY username ASC`,
+		`SELECT username, display_name, is_moderator, is_admin, is_superadmin, last_seen
+		 FROM users WHERE is_admin = true OR is_superadmin = true ORDER BY username ASC`,
 	)
 	if err != nil {
 		logAndError(w, "Failed to retrieve bot admins list", err)
@@ -188,17 +190,18 @@ func (h *UserRoleHandler) admins(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type adminRow struct {
-		Username    string `json:"username"`
-		DisplayName any    `json:"display_name"`
-		IsModerator bool   `json:"is_moderator"`
-		IsAdmin     bool   `json:"is_admin"`
-		LastSeen    any    `json:"last_seen"`
+		Username     string `json:"username"`
+		DisplayName  any    `json:"display_name"`
+		IsModerator  bool   `json:"is_moderator"`
+		IsAdmin      bool   `json:"is_admin"`
+		IsSuperAdmin bool   `json:"is_superadmin"`
+		LastSeen     any    `json:"last_seen"`
 	}
 
 	var admins []adminRow
 	for rows.Next() {
 		var a adminRow
-		if err := rows.Scan(&a.Username, &a.DisplayName, &a.IsModerator, &a.IsAdmin, &a.LastSeen); err != nil {
+		if err := rows.Scan(&a.Username, &a.DisplayName, &a.IsModerator, &a.IsAdmin, &a.IsSuperAdmin, &a.LastSeen); err != nil {
 			logAndError(w, "Failed to retrieve bot admins list", err)
 			return
 		}
@@ -309,13 +312,13 @@ func (h *UserRoleHandler) linkAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserRoleHandler) updateAdmin(w http.ResponseWriter, r *http.Request) {
-	// Require admin (superadmin in JS, but we use admin for now)
+	// Require superadmin
 	claims := auth.GetClaims(r.Context())
 	requestingUser, err := h.users.GetBySupabaseID(r.Context(), claims.Subject)
-	if err != nil || requestingUser == nil || !requestingUser.IsAdmin {
+	if err != nil || requestingUser == nil || !requestingUser.IsSuperAdmin {
 		writeJSON(w, http.StatusForbidden, map[string]string{
 			"error":   "Forbidden",
-			"message": "Admin privileges required",
+			"message": "Superadmin privileges required",
 		})
 		return
 	}
@@ -357,6 +360,85 @@ func (h *UserRoleHandler) updateAdmin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true,
 		"message": username + " bot admin status updated",
+	})
+}
+
+// updateModerator promotes or demotes a user to/from bot moderator.
+// Requires superadmin.
+func (h *UserRoleHandler) updateModerator(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	requestingUser, err := h.users.GetBySupabaseID(r.Context(), claims.Subject)
+	if err != nil || requestingUser == nil || !requestingUser.IsSuperAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":   "Forbidden",
+			"message": "Superadmin privileges required",
+		})
+		return
+	}
+
+	username := r.PathValue("username")
+	var body struct {
+		IsModerator bool `json:"isModerator"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":   "Bad request",
+			"message": "isModerator must be a boolean value",
+		})
+		return
+	}
+
+	// Look up the user to get their Twitch ID for cache invalidation
+	targetUser, err := h.users.GetByUsername(r.Context(), username)
+	if err != nil {
+		logAndError(w, "Failed to update moderator status", err)
+		return
+	}
+	if targetUser == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error":   "User not found",
+			"message": "User " + username + " not found in database",
+		})
+		return
+	}
+
+	tag, err := h.db.Exec(r.Context(),
+		`UPDATE users SET
+			is_moderator = $1,
+			moderator_updated = NOW(),
+			moderator_since = CASE
+				WHEN $1 = true AND moderator_since IS NULL THEN NOW()
+				ELSE moderator_since
+			END
+		 WHERE LOWER(username) = LOWER($2)`,
+		body.IsModerator, username,
+	)
+	if err != nil {
+		logAndError(w, "Failed to update moderator status", err)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"error":   "User not found",
+			"message": "User " + username + " not found in database",
+		})
+		return
+	}
+
+	// Invalidate cache if we have the Twitch ID
+	if targetUser.TwitchUserID != nil {
+		h.users.InvalidateCacheByTwitchID(*targetUser.TwitchUserID)
+	}
+
+	slog.Info("moderator status updated",
+		"updated_by", requestingUser.Username,
+		"target", username,
+		"is_moderator", body.IsModerator,
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": username + " moderator status updated",
 	})
 }
 

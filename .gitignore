@@ -5,6 +5,7 @@
 config.json
 secret.json
 tokens.*.json
+spotify_runtime.json
 google-credentials.json
 
 # IDE

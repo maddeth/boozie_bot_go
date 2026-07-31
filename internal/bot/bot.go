@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -42,9 +43,14 @@ type Bot struct {
 	merge     *services.UserMergeService
 	alerts    *services.AlertService
 	emotes    *services.EmoteService
+	spotifySvc *services.SpotifyService // nil when Spotify is disabled
 
 	// chatters maps displayName/username -> twitchUserID for user resolution.
 	chatters sync.Map
+
+	// !sr cooldowns (only allocated when Spotify is enabled).
+	srUserCooldown  *cooldownMap // per-user rate limit
+	srTrackCooldown *cooldownMap // per-track duplicate-prevention window
 
 	// Precomputed command prefixes from config (e.g. "!eggs", "!addeggs")
 	cmdPoints      string
@@ -68,11 +74,12 @@ func New(
 	merge *services.UserMergeService,
 	alerts *services.AlertService,
 	emotes *services.EmoteService,
+	spotifySvc *services.SpotifyService,
 ) *Bot {
 	if ws == nil {
 		ws = NopBroadcaster{}
 	}
-	return &Bot{
+	b := &Bot{
 		cfg:            cfg,
 		chat:           chat,
 		helix:          helix,
@@ -86,11 +93,17 @@ func New(
 		merge:          merge,
 		alerts:         alerts,
 		emotes:         emotes,
+		spotifySvc:     spotifySvc,
 		cmdPoints:      "!" + cfg.PointsName,
 		cmdAddPoints:   "!add" + cfg.PointsName,
 		cmdTopPoints:   "!top" + cfg.PointsName,
 		cmdMergePoints: "!merge" + cfg.PointsName,
 	}
+	if spotifySvc != nil {
+		b.srUserCooldown = newCooldownMap()
+		b.srTrackCooldown = newCooldownMap()
+	}
+	return b
 }
 
 // HandleMessage is the entry point called by the chat client for each incoming message.
@@ -165,6 +178,8 @@ func (b *Bot) HandleMessage(msg *twitch.ChatMessage) {
 		b.cmdDelQuote(ctx, msg)
 	case strings.HasPrefix(lowerText, "!quote"):
 		b.cmdQuote(ctx, msg)
+	case lowerText == "!sr" || strings.HasPrefix(lowerText, "!sr "):
+		b.cmdSongRequest(ctx, msg)
 	default:
 		// Fallthrough: check custom commands from database
 		b.cmdCustom(ctx, msg)
@@ -233,19 +248,83 @@ func (b *Bot) resolveTwitchUserID(ctx context.Context, username string) string {
 	return user.ID
 }
 
-// handleAutoShoutout sends an auto-shoutout if the user is on the list.
+// handleAutoShoutout sends an auto-shoutout if the user is on the list. On a
+// rate limit the shoutout is queued for a later retry instead of being dropped.
 func (b *Bot) handleAutoShoutout(ctx context.Context, msg *twitch.ChatMessage) {
-	b.shoutouts.MarkShoutedOut(msg.User.ID)
-
 	user, err := b.helix.GetUserByName(ctx, msg.User.Name)
 	if err != nil || user == nil {
 		slog.Error("auto-shoutout user lookup failed", "user", msg.User.Name, "error", err)
 		return
 	}
 
-	_ = b.helix.SendShoutout(ctx, user.ID)
-	b.sayf("Check out %s! Follow them at twitch.tv/%s", msg.User.DisplayName, user.Login)
-	slog.Info("auto-shoutout sent", "user", msg.User.DisplayName)
+	p := services.PendingShoutout{
+		UserID:      user.ID,
+		DisplayName: msg.User.DisplayName,
+		Login:       user.Login,
+	}
+
+	switch err := b.sendAutoShoutout(ctx, p); {
+	case err == nil:
+		slog.Info("auto-shoutout sent", "user", p.DisplayName)
+	case errors.Is(err, twitch.ErrShoutoutRateLimited):
+		b.shoutouts.QueuePendingShoutout(p)
+		slog.Warn("auto-shoutout rate limited, queued for retry", "user", p.DisplayName)
+	default:
+		// Not marked done and not queued, so it retries on the user's next message.
+		slog.Error("auto-shoutout failed", "user", p.DisplayName, "error", err)
+	}
+}
+
+// sendAutoShoutout fires the native Twitch shoutout and, on success, marks the
+// user done and posts the chat message. Returns the SendShoutout error (nil on
+// success) so callers can decide whether to queue or retry. Shared by the
+// initial attempt and the retry loop.
+func (b *Bot) sendAutoShoutout(ctx context.Context, p services.PendingShoutout) error {
+	if err := b.helix.SendShoutout(ctx, p.UserID); err != nil {
+		return err
+	}
+	b.shoutouts.MarkShoutedOut(p.UserID)
+	b.shoutouts.RemovePendingShoutout(p.UserID)
+	b.sayf("Check out %s! Follow them at twitch.tv/%s", p.DisplayName, p.Login)
+	return nil
+}
+
+// RetryPendingShoutouts attempts queued shoutouts that previously failed (e.g.
+// were rate limited). Called periodically. Stops at the first rate limit so the
+// remaining items wait for the next pass rather than burning failed attempts
+// against the channel-wide 2-minute limit.
+func (b *Bot) RetryPendingShoutouts(ctx context.Context) {
+	pending := b.shoutouts.GetPendingShoutouts()
+	if len(pending) == 0 {
+		return
+	}
+
+	for _, p := range pending {
+		// Skip if no longer eligible (already shouted out via a chat message
+		// since this snapshot, or removed from the list mid-stream).
+		if !b.shoutouts.ShouldAutoShoutout(p.UserID) {
+			b.shoutouts.RemovePendingShoutout(p.UserID)
+			continue
+		}
+
+		switch err := b.sendAutoShoutout(ctx, p); {
+		case err == nil:
+			b.shoutouts.RemovePendingShoutout(p.UserID)
+			slog.Info("auto-shoutout sent on retry", "user", p.DisplayName)
+		case errors.Is(err, twitch.ErrShoutoutRateLimited):
+			slog.Info("auto-shoutout still rate limited, will retry next pass", "user", p.DisplayName)
+			return
+		default:
+			b.shoutouts.RemovePendingShoutout(p.UserID)
+			slog.Error("auto-shoutout retry failed, dropping from queue", "user", p.DisplayName, "error", err)
+		}
+	}
+}
+
+// ResetStreamShoutouts clears the per-stream auto-shoutout tracking so regulars
+// become eligible again. Called by the periodic poll on the stream offline edge.
+func (b *Bot) ResetStreamShoutouts() {
+	b.shoutouts.ResetStreamShoutouts()
 }
 
 // UpdateChatters replaces the chatters map with fresh data from a Helix API fetch.

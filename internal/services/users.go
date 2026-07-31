@@ -21,6 +21,7 @@ type User struct {
 	Email              *string    `json:"email"`
 	IsModerator        bool       `json:"is_moderator"`
 	IsAdmin            bool       `json:"is_admin"`
+	IsSuperAdmin       bool       `json:"is_superadmin"`
 	IsSubscriber       bool       `json:"is_subscriber"`
 	SubscriptionTier   *string    `json:"subscription_tier"`
 	SubscriptionUpdated *time.Time `json:"subscription_updated"`
@@ -66,13 +67,13 @@ func userScanFields(u *User) []any {
 	return []any{
 		&u.ID, &u.TwitchUserID, &u.Username, &u.DisplayName,
 		&u.SupabaseUserID, &u.Email, &u.IsModerator, &u.IsAdmin,
-		&u.IsSubscriber, &u.SubscriptionTier, &u.SubscriptionUpdated,
+		&u.IsSuperAdmin, &u.IsSubscriber, &u.SubscriptionTier, &u.SubscriptionUpdated,
 		&u.ModeratorSince, &u.ModeratorUpdated, &u.LastSeen, &u.CreatedAt,
 	}
 }
 
 const userSelectCols = `id, twitch_user_id, username, display_name, supabase_user_id, email,
-	is_moderator, is_admin, is_subscriber, subscription_tier, subscription_updated,
+	is_moderator, is_admin, is_superadmin, is_subscriber, subscription_tier, subscription_updated,
 	moderator_since, moderator_updated, last_seen, created_at`
 
 // GetOrCreateUser looks up or creates a user by Twitch ID, with caching.
@@ -318,4 +319,9 @@ func (s *UserService) invalidateCache(key string) {
 	s.mu.Lock()
 	delete(s.cache, key)
 	s.mu.Unlock()
+}
+
+// InvalidateCacheByTwitchID invalidates the cache entry for a given Twitch user ID.
+func (s *UserService) InvalidateCacheByTwitchID(twitchUserID string) {
+	s.invalidateCache("twitch:" + twitchUserID)
 }

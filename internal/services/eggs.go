@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -82,7 +83,7 @@ func (s *EggService) CreateOrUpdateUserEggs(ctx context.Context, twitchUserID, u
 		return nil, err
 	}
 
-	sanitised := username // In JS, sanitisation is done elsewhere. Keep it simple.
+	sanitised := strings.ToLower(username)
 
 	if existing != nil {
 		// Update username if needed
@@ -126,8 +127,8 @@ func (s *EggService) UpdateUserEggs(ctx context.Context, twitchUserID, username 
 		// Create user with initial eggs
 		err = tx.QueryRow(ctx,
 			`INSERT INTO eggs (twitch_user_id, username, username_sanitised, eggs_amount)
-			 VALUES ($1, $2, $2, $3) RETURNING `+eggSelectCols,
-			twitchUserID, username, eggChange,
+			 VALUES ($1, $2, $3, $4) RETURNING `+eggSelectCols,
+			twitchUserID, username, strings.ToLower(username), eggChange,
 		).Scan(&e.ID, &e.Username, &e.UsernameSanitised, &e.TwitchUserID, &e.EggsAmount, &e.CreatedAt, &e.UpdatedAt)
 		if err != nil {
 			return nil, err
@@ -149,7 +150,7 @@ func (s *EggService) UpdateUserEggs(ctx context.Context, twitchUserID, username 
 	err = tx.QueryRow(ctx,
 		`UPDATE eggs SET eggs_amount = $1, username = $2, username_sanitised = $3, updated_at = NOW()
 		 WHERE id = $4 RETURNING `+eggSelectCols,
-		newAmount, username, username, e.ID,
+		newAmount, username, strings.ToLower(username), e.ID,
 	).Scan(&e.ID, &e.Username, &e.UsernameSanitised, &e.TwitchUserID, &e.EggsAmount, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		return nil, err

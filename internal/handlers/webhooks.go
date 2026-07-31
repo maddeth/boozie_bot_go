@@ -91,7 +91,11 @@ func (h *WebhookHandler) createWebhooks(w http.ResponseWriter, r *http.Request) 
 			},
 		}
 
-		bodyJSON, _ := json.Marshal(body)
+		bodyJSON, err := json.Marshal(body)
+		if err != nil {
+			results = append(results, result{EventType: et.name, Success: false, Error: err.Error()})
+			continue
+		}
 		req, err := http.NewRequestWithContext(r.Context(), http.MethodPost,
 			"https://api.twitch.tv/helix/eventsub/subscriptions", bytes.NewReader(bodyJSON))
 		if err != nil {

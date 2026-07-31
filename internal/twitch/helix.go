@@ -3,6 +3,7 @@ package twitch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +13,12 @@ import (
 )
 
 const helixBaseURL = "https://api.twitch.tv/helix"
+
+// ErrShoutoutRateLimited is returned by SendShoutout when Twitch rejects the
+// request due to its rate limit (one shoutout per 2 minutes per channel, one
+// per 60 minutes per target). Callers can detect it with errors.Is and requeue
+// the shoutout for a later retry rather than dropping it.
+var ErrShoutoutRateLimited = errors.New("shoutout rate limited")
 
 // TwitchUser represents a Twitch user from the Helix API.
 type TwitchUser struct {
@@ -221,9 +228,11 @@ func (h *HelixClient) GetSubscription(ctx context.Context, userID string) (strin
 	return "0", nil
 }
 
-// SendShoutout sends a Twitch shoutout API call.
+// SendShoutout sends a Twitch shoutout API call. Authenticated as the bot, which
+// must be a moderator of the channel: Twitch requires moderator_id to match the
+// user ID in the OAuth token.
 func (h *HelixClient) SendShoutout(ctx context.Context, toUserID string) error {
-	token, err := h.tokenMgr.GetAccessToken(h.streamerID)
+	token, err := h.tokenMgr.GetAccessToken(h.botUserID)
 	if err != nil {
 		return err
 	}
@@ -249,6 +258,9 @@ func (h *HelixClient) SendShoutout(ctx context.Context, toUserID string) error {
 
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return fmt.Errorf("%w: %s", ErrShoutoutRateLimited, body)
+		}
 		return fmt.Errorf("shoutout API returned %d: %s", resp.StatusCode, body)
 	}
 	return nil
