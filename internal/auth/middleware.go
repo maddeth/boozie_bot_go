@@ -245,8 +245,8 @@ func (m *Middleware) RequireSuperAdminRole(next http.Handler) http.Handler {
 func (m *Middleware) getUserBySupabaseID(ctx context.Context, supabaseUserID string) (*User, error) {
 	var user User
 	err := m.db.QueryRow(ctx,
-		`SELECT id, twitch_user_id, username, supabase_user_id, is_moderator, is_admin
-		 FROM users WHERE supabase_user_id = $1`,
+		`SELECT id, twitch_user_id, username, supabase_user_id, is_moderator, is_admin, is_superadmin
+			 FROM users WHERE supabase_user_id = $1`,
 		supabaseUserID,
 	).Scan(&user.ID, &user.TwitchUserID, &user.Username, &user.SupabaseUserID, &user.IsModerator, &user.IsAdmin, &user.IsSuperAdmin)
 

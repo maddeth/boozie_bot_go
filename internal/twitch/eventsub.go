@@ -22,10 +22,10 @@ import (
 
 const (
 	headerMessageID        = "Twitch-Eventsub-Message-Id"
-	headerMessageTimestamp  = "Twitch-Eventsub-Message-Timestamp"
-	headerMessageSignature  = "Twitch-Eventsub-Message-Signature"
-	headerMessageType       = "Twitch-Eventsub-Message-Type"
-	headerSubscriptionType  = "Twitch-Eventsub-Subscription-Type"
+	headerMessageTimestamp = "Twitch-Eventsub-Message-Timestamp"
+	headerMessageSignature = "Twitch-Eventsub-Message-Signature"
+	headerMessageType      = "Twitch-Eventsub-Message-Type"
+	headerSubscriptionType = "Twitch-Eventsub-Subscription-Type"
 )
 
 var hexRegex = regexp.MustCompile(`^[0-9A-Fa-f]{6}$`)
@@ -409,7 +409,7 @@ func (h *EventSubHandler) handleRedemption(ctx context.Context, eventData json.R
 	}
 	h.broadcast(redemptionMsg)
 
-	// Handle egg conversion redemptions (Twitch reward titles — must match exactly)
+	// Handle egg conversion redemptions (Twitch reward titles - must match exactly)
 	switch title {
 	case "Convert Feed to 100 Eggs":
 		h.eggSvc.EggUpdateCommand(ctx, event.UserLogin, 100, event.UserID, h.pointsName, h.pointsNameSingular)

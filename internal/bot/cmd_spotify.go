@@ -61,7 +61,7 @@ func (c *cooldownMap) mark(key string) {
 	c.last[key] = time.Now()
 }
 
-// cmdSongRequest handles !sr <query> — adds a track to the broadcaster's Spotify queue.
+// cmdSongRequest handles !sr <query> - adds a track to the broadcaster's Spotify queue.
 func (b *Bot) cmdSongRequest(ctx context.Context, msg *twitch.ChatMessage) {
 	if b.spotifySvc == nil || b.cfg.Spotify == nil || !b.cfg.Spotify.Enabled {
 		return // silently ignore if Spotify isn't configured
@@ -83,7 +83,7 @@ func (b *Bot) cmdSongRequest(ctx context.Context, msg *twitch.ChatMessage) {
 	maxDur := time.Duration(b.cfg.Spotify.MaxTrackDurationSeconds) * time.Second
 	dupeCD := time.Duration(b.cfg.Spotify.DuplicateCooldownSeconds) * time.Second
 
-	// Per-user cooldown (skipped for mods/broadcaster — they tend to test).
+	// Per-user cooldown (skipped for mods/broadcaster - they tend to test).
 	if !b.isMod(ctx, msg) {
 		if remaining, ok := b.srUserCooldown.check(msg.User.ID, cooldown); !ok {
 			b.sayf("%s - !sr is on cooldown, try again in %ds", msg.User.DisplayName, int(remaining.Seconds())+1)
@@ -108,16 +108,16 @@ func (b *Bot) cmdSongRequest(ctx context.Context, msg *twitch.ChatMessage) {
 		return
 	}
 
-	// Duration cap — applies to everyone (mods included).
+	// Duration cap - applies to everyone (mods included).
 	if maxDur > 0 && time.Duration(track.DurationMS)*time.Millisecond > maxDur {
-		b.sayf("%s - %q is too long (%s) — max for !sr is %s",
+		b.sayf("%s - %q is too long (%s) - max for !sr is %s",
 			msg.User.DisplayName, track.Name,
 			formatDuration(time.Duration(track.DurationMS)*time.Millisecond),
 			formatDuration(maxDur))
 		return
 	}
 
-	// Duplicate-track cooldown — applies to everyone. Peek only; we'll mark
+	// Duplicate-track cooldown - applies to everyone. Peek only; we'll mark
 	// after a successful queue add so a failed add doesn't lock the track out.
 	if dupeCD > 0 {
 		if remaining, blocked := b.srTrackCooldown.peek(track.ID, dupeCD); blocked {
@@ -131,7 +131,7 @@ func (b *Bot) cmdSongRequest(ctx context.Context, msg *twitch.ChatMessage) {
 	if cost > 0 {
 		if _, err := b.eggs.UpdateUserEggs(ctx, msg.User.ID, msg.User.Name, -cost); err != nil {
 			if errors.Is(err, services.ErrInsufficientEggs) {
-				b.sayf("%s - !sr costs %d %s %s — you don't have enough", msg.User.DisplayName, cost, b.cfg.PointsName, b.cfg.PointsEmoji)
+				b.sayf("%s - !sr costs %d %s %s - you don't have enough", msg.User.DisplayName, cost, b.cfg.PointsName, b.cfg.PointsEmoji)
 				return
 			}
 			slog.Error("sr: charge eggs failed", "error", err, "user", msg.User.Name)
@@ -162,7 +162,80 @@ func (b *Bot) cmdSongRequest(ctx context.Context, msg *twitch.ChatMessage) {
 		b.srTrackCooldown.mark(track.ID)
 	}
 
-	b.sayf("🎵 Queued for %s: %s — %s", msg.User.DisplayName, track.Name, strings.Join(track.Artists, ", "))
+	b.sayf("🎵 Queued for %s: %s - %s", msg.User.DisplayName, track.Name, strings.Join(track.Artists, ", "))
+}
+
+// cmdSong handles !song - prints the currently playing track to chat.
+func (b *Bot) cmdSong(ctx context.Context, msg *twitch.ChatMessage) {
+	if b.spotifySvc == nil || b.cfg.Spotify == nil || !b.cfg.Spotify.Enabled {
+		return
+	}
+
+	np := b.spotifySvc.Latest()
+	if np == nil || np.Track == nil || !np.IsPlaying {
+		b.sayf("No song is currently playing")
+		return
+	}
+
+	artists := strings.Join(np.Track.Artists, ", ")
+	b.sayf("🎵 Now playing: %s - %s", np.Track.Name, artists)
+}
+
+// cmdSongQueue handles !songqueue - prints the current queue to chat.
+func (b *Bot) cmdSongQueue(ctx context.Context, msg *twitch.ChatMessage) {
+	if b.spotifySvc == nil || b.cfg.Spotify == nil || !b.cfg.Spotify.Enabled {
+		return
+	}
+
+	currentlyPlaying, queue, err := b.spotifySvc.Client().GetQueue(ctx)
+	if err != nil {
+		if errors.Is(err, spotify.ErrNothingPlaying) {
+			b.sayf("Spotify queue is empty")
+			return
+		}
+		slog.Error("songqueue: failed to get queue", "error", err)
+		b.sayf("Failed to fetch Spotify queue")
+		return
+	}
+
+	if currentlyPlaying == nil && len(queue) == 0 {
+		b.sayf("Spotify queue is empty")
+		return
+	}
+
+	// Build the queue message. Spotify chat messages have a 500 char limit
+	// so we cap the number of tracks shown.
+	const maxTracks = 5
+
+	var sb strings.Builder
+	sb.WriteString("🎵 Queue: ")
+	if currentlyPlaying != nil {
+		sb.WriteString("NOW: ")
+		sb.WriteString(currentlyPlaying.Name)
+		sb.WriteString(" - ")
+		sb.WriteString(strings.Join(currentlyPlaying.Artists, ", "))
+	}
+
+	shown := 0
+	for _, t := range queue {
+		if shown >= maxTracks {
+			remaining := len(queue) - shown
+			sb.WriteString(fmt.Sprintf(" | +%d more", remaining))
+			break
+		}
+		if currentlyPlaying != nil || shown > 0 {
+			sb.WriteString(" | ")
+		}
+		sb.WriteString(fmt.Sprintf("NEXT%d: %s - %s", shown+1, t.Name, strings.Join(t.Artists, ", ")))
+		shown++
+	}
+
+	if currentlyPlaying == nil && len(queue) == 0 {
+		b.sayf("Spotify queue is empty")
+		return
+	}
+
+	b.sayf(sb.String())
 }
 
 // formatDuration renders a duration as "Mm" or "Mm Ss" (e.g. "10m", "3m 24s").

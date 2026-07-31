@@ -26,15 +26,15 @@ import (
 
 // DistributionResult holds stats from the last egg distribution cycle.
 type DistributionResult struct {
-	Time                 time.Time      `json:"time"`
-	StreamLive           bool           `json:"streamLive"`
-	UniqueChatters       int            `json:"uniqueChatters"`
-	Rewarded             int            `json:"rewarded"`
-	TotalDistributed     int            `json:"totalDistributed"`
-	TierCounts           map[string]int `json:"tierCounts"`
-	SubLookupErrors      int            `json:"subLookupErrors"`
-	UserCreateErrors     int            `json:"userCreateErrors"`
-	RewardErrors         int            `json:"rewardErrors"`
+	Time             time.Time      `json:"time"`
+	StreamLive       bool           `json:"streamLive"`
+	UniqueChatters   int            `json:"uniqueChatters"`
+	Rewarded         int            `json:"rewarded"`
+	TotalDistributed int            `json:"totalDistributed"`
+	TierCounts       map[string]int `json:"tierCounts"`
+	SubLookupErrors  int            `json:"subLookupErrors"`
+	UserCreateErrors int            `json:"userCreateErrors"`
+	RewardErrors     int            `json:"rewardErrors"`
 }
 
 var (
@@ -273,7 +273,7 @@ func main() {
 		})
 	})
 
-	// Test alert endpoint — broadcasts a fake event to WebSocket clients
+	// Test alert endpoint - broadcasts a fake event to WebSocket clients
 	mux.HandleFunc("POST /api/debug/test-alert", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Type string `json:"type"` // follow, sub, resub, giftsub, redemption

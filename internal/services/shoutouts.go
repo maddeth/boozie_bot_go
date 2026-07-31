@@ -18,7 +18,7 @@ type PendingShoutout struct {
 }
 
 // ShoutoutService manages auto-shoutout lists and per-stream session tracking.
-// The Twitch API calls (sendShoutout) will be handled in internal/twitch/ — this
+// The Twitch API calls (sendShoutout) will be handled in internal/twitch/ - this
 // service only manages the data layer and in-memory state.
 type ShoutoutService struct {
 	db *pgxpool.Pool

@@ -29,20 +29,20 @@ func (NopBroadcaster) BroadcastImmediate(any) {}
 // Bot is the chat command router. It receives messages from the IRC client
 // and dispatches them to the appropriate command handlers.
 type Bot struct {
-	cfg       *config.Config
-	chat      *twitch.ChatClient
-	helix     *twitch.HelixClient
-	ws        Broadcaster
+	cfg   *config.Config
+	chat  *twitch.ChatClient
+	helix *twitch.HelixClient
+	ws    Broadcaster
 
-	users     *services.UserService
-	eggs      *services.EggService
-	commands  *services.CommandService
-	quotes    *services.QuoteService
-	pools     *services.PoolService
-	shoutouts *services.ShoutoutService
-	merge     *services.UserMergeService
-	alerts    *services.AlertService
-	emotes    *services.EmoteService
+	users      *services.UserService
+	eggs       *services.EggService
+	commands   *services.CommandService
+	quotes     *services.QuoteService
+	pools      *services.PoolService
+	shoutouts  *services.ShoutoutService
+	merge      *services.UserMergeService
+	alerts     *services.AlertService
+	emotes     *services.EmoteService
 	spotifySvc *services.SpotifyService // nil when Spotify is disabled
 
 	// chatters maps displayName/username -> twitchUserID for user resolution.
@@ -146,7 +146,7 @@ func (b *Bot) HandleMessage(msg *twitch.ChatMessage) {
 		b.handleAutoShoutout(ctx, msg)
 	}
 
-	// Route commands (order matters — more specific prefixes first)
+	// Route commands (order matters - more specific prefixes first)
 	switch {
 	case strings.HasPrefix(lowerText, b.cmdAddPoints):
 		b.cmdAddEggs(ctx, msg)
@@ -180,6 +180,10 @@ func (b *Bot) HandleMessage(msg *twitch.ChatMessage) {
 		b.cmdQuote(ctx, msg)
 	case lowerText == "!sr" || strings.HasPrefix(lowerText, "!sr "):
 		b.cmdSongRequest(ctx, msg)
+	case lowerText == "!song":
+		b.cmdSong(ctx, msg)
+	case lowerText == "!songqueue" || lowerText == "!sq":
+		b.cmdSongQueue(ctx, msg)
 	default:
 		// Fallthrough: check custom commands from database
 		b.cmdCustom(ctx, msg)

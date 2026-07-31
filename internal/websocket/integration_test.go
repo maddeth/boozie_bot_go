@@ -293,7 +293,7 @@ func TestIntegration_ClientPingPong(t *testing.T) {
 	other, _ := json.Marshal(map[string]any{"type": "hello"})
 	conn.Write(ctx, websocket.MessageText, other)
 
-	// Should not get a response — verify by sending a real ping after and checking that's what we get.
+	// Should not get a response - verify by sending a real ping after and checking that's what we get.
 	conn.Write(ctx, websocket.MessageText, ping)
 	msg = readJSON(t, conn)
 	if msg["type"] != "pong" {

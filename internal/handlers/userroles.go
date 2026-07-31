@@ -63,8 +63,8 @@ func (h *UserRoleHandler) me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"username":    user.Username,
-		"displayName": user.DisplayName,
+		"username":     user.Username,
+		"displayName":  user.DisplayName,
 		"twitchUserId": user.TwitchUserID,
 		"roles": map[string]bool{
 			"isModerator":  user.IsModerator,
@@ -124,8 +124,8 @@ func (h *UserRoleHandler) meRefresh(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "Moderator status refreshed successfully",
 		"roleInfo": map[string]any{
-			"username":    user.Username,
-			"displayName": user.DisplayName,
+			"username":     user.Username,
+			"displayName":  user.DisplayName,
 			"twitchUserId": user.TwitchUserID,
 			"roles": map[string]bool{
 				"isModerator":  user.IsModerator,
@@ -304,9 +304,9 @@ func (h *UserRoleHandler) linkAccount(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "Accounts linked successfully",
 		"user": map[string]any{
-			"username":    twitchUser.Username,
+			"username":     twitchUser.Username,
 			"twitchUserId": twitchUser.TwitchUserID,
-			"isModerator": twitchUser.IsModerator,
+			"isModerator":  twitchUser.IsModerator,
 		},
 	})
 }
@@ -442,7 +442,7 @@ func (h *UserRoleHandler) updateModerator(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// Stats sub-endpoints — all moderator-protected
+// Stats sub-endpoints - all moderator-protected
 
 func (h *UserRoleHandler) statsUsers(w http.ResponseWriter, r *http.Request) {
 	if !h.isModeratorRequest(w, r) {

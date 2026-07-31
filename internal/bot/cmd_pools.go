@@ -10,7 +10,7 @@ import (
 	"github.com/maddeth/boozie-bot/internal/twitch"
 )
 
-// cmdPool handles !pool <poolname> — check a pool's status.
+// cmdPool handles !pool <poolname> - check a pool's status.
 func (b *Bot) cmdPool(ctx context.Context, msg *twitch.ChatMessage) {
 	args := strings.Fields(strings.TrimSpace(msg.Text[len("!pool"):]))
 	if len(args) == 0 {
@@ -77,7 +77,7 @@ func (b *Bot) cmdDonate(ctx context.Context, msg *twitch.ChatMessage) {
 		msg.User.DisplayName, amount, b.cfg.PointsName, pool.PoolName, formatNumber(pool.EggsAmount), b.cfg.PointsEmoji)
 }
 
-// cmdListPools handles !pools — list active pools.
+// cmdListPools handles !pools - list active pools.
 func (b *Bot) cmdListPools(ctx context.Context, msg *twitch.ChatMessage) {
 	pools, err := b.pools.GetAllPools(ctx)
 	if err != nil {

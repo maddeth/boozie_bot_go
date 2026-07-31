@@ -71,7 +71,7 @@ func (s *SpotifyService) Client() *spotify.Client {
 }
 
 // Run starts the polling loop and blocks until ctx is cancelled.
-// Cadence: 5s while playing, 30s while idle/paused — to stay well under
+// Cadence: 5s while playing, 30s while idle/paused - to stay well under
 // Spotify's rate limit while still feeling responsive when music is on.
 func (s *SpotifyService) Run(ctx context.Context) {
 	const (

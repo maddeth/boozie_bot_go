@@ -10,7 +10,7 @@ import (
 	"github.com/maddeth/boozie-bot/internal/twitch"
 )
 
-// cmdListCommands handles !commands — list all available commands.
+// cmdListCommands handles !commands - list all available commands.
 func (b *Bot) cmdListCommands(ctx context.Context, msg *twitch.ChatMessage) {
 	commands := b.commands.GetAllCommands(ctx)
 
@@ -39,7 +39,7 @@ func (b *Bot) cmdListCommands(ctx context.Context, msg *twitch.ChatMessage) {
 	}
 
 	// Built-in commands
-	message += fmt.Sprintf(" | Built-in: %s, %s, !quote, !pool, !donate, !pools, "+
+	message += fmt.Sprintf(" | Built-in: %s, %s, !song, !songqueue, !quote, !pool, !donate, !pools, "+
 		"!so (moderator), !shoutout (moderator), !createpool (moderator), "+
 		"!deletepool (moderator), %s (moderator)",
 		b.cmdPoints, b.cmdTopPoints, b.cmdMergePoints)

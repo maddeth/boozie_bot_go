@@ -217,10 +217,10 @@ func (h *HelixClient) GetSubscription(ctx context.Context, userID string) (strin
 		return "0", fmt.Errorf("parsing subscription response for %s: %w", userID, err)
 	}
 	if len(resp.Data) == 0 {
-		return "0", nil // Not subscribed — this is expected
+		return "0", nil // Not subscribed - this is expected
 	}
 
-	// Twitch returns "1000", "2000", "3000" — convert to "1", "2", "3"
+	// Twitch returns "1000", "2000", "3000" - convert to "1", "2", "3"
 	tier := resp.Data[0].Tier
 	if len(tier) >= 1 {
 		return tier[:1], nil
@@ -268,9 +268,9 @@ func (h *HelixClient) SendShoutout(ctx context.Context, toUserID string) error {
 
 // TwitchModerator represents a moderator from the Helix API.
 type TwitchModerator struct {
-	UserID      string `json:"user_id"`
-	UserLogin   string `json:"user_login"`
-	UserName    string `json:"user_name"`
+	UserID    string `json:"user_id"`
+	UserLogin string `json:"user_login"`
+	UserName  string `json:"user_name"`
 }
 
 // GetModerators fetches all moderators for the channel (paginated).

@@ -53,7 +53,7 @@ func (b *Bot) cmdAddEggs(ctx context.Context, msg *twitch.ChatMessage) {
 	b.say(result)
 }
 
-// cmdEggs handles !<points> [username] — check your own or another user's points.
+// cmdEggs handles !<points> [username] - check your own or another user's points.
 func (b *Bot) cmdEggs(ctx context.Context, msg *twitch.ChatMessage) {
 	args := stripInvisibleChars(strings.TrimSpace(msg.Text[len(b.cmdPoints):]))
 
@@ -100,7 +100,7 @@ func (b *Bot) cmdEggs(ctx context.Context, msg *twitch.ChatMessage) {
 	b.sayf("%s - You have %s %s %s", msg.User.DisplayName, formatNumber(eggs.EggsAmount), b.cfg.PointsName, b.cfg.PointsEmoji)
 }
 
-// cmdTopEggs handles !top<points> — show the points leaderboard.
+// cmdTopEggs handles !top<points> - show the points leaderboard.
 func (b *Bot) cmdTopEggs(ctx context.Context, msg *twitch.ChatMessage) {
 	leaderboard, err := b.eggs.GetLeaderboard(ctx, 5)
 	if err != nil {

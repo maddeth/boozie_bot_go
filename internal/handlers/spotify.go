@@ -20,7 +20,7 @@ type SpotifyHandler struct {
 	auth     *auth.Middleware
 	hasCreds bool
 
-	stateMu     sync.Mutex
+	stateMu      sync.Mutex
 	pendingOAuth map[string]time.Time
 }
 
@@ -155,7 +155,7 @@ func (h *SpotifyHandler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !h.consumeState(state) {
-		http.Error(w, "Invalid or expired state — restart the authorization flow", http.StatusBadRequest)
+		http.Error(w, "Invalid or expired state - restart the authorization flow", http.StatusBadRequest)
 		return
 	}
 

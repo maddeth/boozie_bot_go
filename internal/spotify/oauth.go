@@ -71,7 +71,7 @@ func NewTokenManager(clientID, clientSecret, redirectURI string) *TokenManager {
 func (tm *TokenManager) LoadTokenFile() error {
 	data, err := os.ReadFile(tokenFilePath)
 	if os.IsNotExist(err) {
-		slog.Info("no Spotify token file yet — broadcaster must authorize via /api/spotify/auth")
+		slog.Info("no Spotify token file yet - broadcaster must authorize via /api/spotify/auth")
 		return nil
 	}
 	if err != nil {
@@ -174,7 +174,7 @@ func (tm *TokenManager) GetAccessToken() (string, error) {
 	tm.mu.RUnlock()
 
 	if td == nil || td.RefreshToken == "" {
-		return "", fmt.Errorf("spotify not authorized — visit /api/spotify/auth")
+		return "", fmt.Errorf("spotify not authorized - visit /api/spotify/auth")
 	}
 	if !td.IsExpired() {
 		return td.AccessToken, nil
@@ -209,7 +209,7 @@ func (tm *TokenManager) refresh(refreshToken string) (string, error) {
 
 	var result struct {
 		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"` // optional — Spotify may not rotate it
+		RefreshToken string `json:"refresh_token"` // optional - Spotify may not rotate it
 		ExpiresIn    int    `json:"expires_in"`
 		Scope        string `json:"scope"`
 	}

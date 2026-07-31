@@ -13,22 +13,22 @@ import (
 
 // User represents a row in the users table.
 type User struct {
-	ID                 int        `json:"id"`
-	TwitchUserID       *string    `json:"twitch_user_id"`
-	Username           string     `json:"username"`
-	DisplayName        *string    `json:"display_name"`
-	SupabaseUserID     *string    `json:"supabase_user_id"`
-	Email              *string    `json:"email"`
-	IsModerator        bool       `json:"is_moderator"`
-	IsAdmin            bool       `json:"is_admin"`
-	IsSuperAdmin       bool       `json:"is_superadmin"`
-	IsSubscriber       bool       `json:"is_subscriber"`
-	SubscriptionTier   *string    `json:"subscription_tier"`
+	ID                  int        `json:"id"`
+	TwitchUserID        *string    `json:"twitch_user_id"`
+	Username            string     `json:"username"`
+	DisplayName         *string    `json:"display_name"`
+	SupabaseUserID      *string    `json:"supabase_user_id"`
+	Email               *string    `json:"email"`
+	IsModerator         bool       `json:"is_moderator"`
+	IsAdmin             bool       `json:"is_admin"`
+	IsSuperAdmin        bool       `json:"is_superadmin"`
+	IsSubscriber        bool       `json:"is_subscriber"`
+	SubscriptionTier    *string    `json:"subscription_tier"`
 	SubscriptionUpdated *time.Time `json:"subscription_updated"`
-	ModeratorSince     *time.Time `json:"moderator_since"`
-	ModeratorUpdated   *time.Time `json:"moderator_updated"`
-	LastSeen           *time.Time `json:"last_seen"`
-	CreatedAt          time.Time  `json:"created_at"`
+	ModeratorSince      *time.Time `json:"moderator_since"`
+	ModeratorUpdated    *time.Time `json:"moderator_updated"`
+	LastSeen            *time.Time `json:"last_seen"`
+	CreatedAt           time.Time  `json:"created_at"`
 }
 
 // UserStats contains aggregate user statistics.
@@ -100,7 +100,7 @@ func (s *UserService) GetOrCreateUser(ctx context.Context, twitchUserID, usernam
 	).Scan(userScanFields(&u)...)
 
 	if err == nil {
-		// Found — update username/display_name/last_seen if needed
+		// Found - update username/display_name/last_seen if needed
 		needsUpdate := u.Username != username || (displayName != nil && (u.DisplayName == nil || *u.DisplayName != *displayName))
 		if needsUpdate || u.LastSeen == nil || time.Since(*u.LastSeen) > 60*time.Second {
 			s.db.Exec(ctx,
@@ -127,7 +127,7 @@ func (s *UserService) GetOrCreateUser(ctx context.Context, twitchUserID, usernam
 	).Scan(userScanFields(&u)...)
 
 	if err == nil {
-		// Found by username — backfill twitch_user_id
+		// Found by username - backfill twitch_user_id
 		s.db.Exec(ctx,
 			`UPDATE users SET twitch_user_id = $1, display_name = COALESCE($2, display_name), username = $3, last_seen = NOW() WHERE id = $4`,
 			twitchUserID, displayName, username, u.ID,

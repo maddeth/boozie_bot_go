@@ -18,14 +18,14 @@ func quoteDate(q *services.Quote) string {
 	return q.CreatedAt.Format("Jan 2, 2006")
 }
 
-// cmdQuote handles !quote [id] — get a random or specific quote.
+// cmdQuote handles !quote [id] - get a random or specific quote.
 func (b *Bot) cmdQuote(ctx context.Context, msg *twitch.ChatMessage) {
 	args := strings.TrimSpace(stripInvisibleChars(msg.Text[len("!quote"):]))
 
 	if args != "" {
 		id, err := strconv.Atoi(args)
 		if err != nil {
-			// Not a number — ignore (might be a partial match like "!quotestuff")
+			// Not a number - ignore (might be a partial match like "!quotestuff")
 			return
 		}
 

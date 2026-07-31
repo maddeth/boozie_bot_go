@@ -15,7 +15,7 @@ import (
 )
 
 // OBSService controls OBS Studio via the OBS WebSocket v5 protocol.
-// It connects on demand, sends commands, and disconnects — matching the JS behaviour.
+// It connects on demand, sends commands, and disconnects - matching the JS behaviour.
 type OBSService struct {
 	address  string // e.g. "ws://192.168.1.69:4455"
 	password string
@@ -183,8 +183,8 @@ func (s *OBSService) setSourceFilterSettings(ctx context.Context, conn *websocke
 }
 
 type obsMessage struct {
-	Op int                    `json:"op"`
-	D  map[string]any         `json:"d"`
+	Op int            `json:"op"`
+	D  map[string]any `json:"d"`
 }
 
 func (s *OBSService) readJSON(ctx context.Context, conn *websocket.Conn, v any) error {

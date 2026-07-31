@@ -22,10 +22,10 @@ type Track struct {
 	Name       string   `json:"name"`
 	Artists    []string `json:"artists"`
 	Album      string   `json:"album"`
-	AlbumArt   string   `json:"albumArt"`           // largest image URL, may be ""
+	AlbumArt   string   `json:"albumArt"` // largest image URL, may be ""
 	DurationMS int      `json:"durationMs"`
-	URL        string   `json:"url"`                // open.spotify.com URL
-	URI        string   `json:"uri,omitempty"`      // spotify:track:... (used internally for queue)
+	URL        string   `json:"url"`           // open.spotify.com URL
+	URI        string   `json:"uri,omitempty"` // spotify:track:... (used internally for queue)
 	Explicit   bool     `json:"explicit"`
 }
 
@@ -78,11 +78,11 @@ func (c *Client) GetCurrentlyPlaying(ctx context.Context) (*NowPlaying, error) {
 		IsPlaying  bool `json:"is_playing"`
 		ProgressMS int  `json:"progress_ms"`
 		Item       *struct {
-			ID         string `json:"id"`
-			Name       string `json:"name"`
-			DurationMS int    `json:"duration_ms"`
-			Explicit   bool   `json:"explicit"`
-			URI        string `json:"uri"`
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			DurationMS   int    `json:"duration_ms"`
+			Explicit     bool   `json:"explicit"`
+			URI          string `json:"uri"`
 			ExternalURLs struct {
 				Spotify string `json:"spotify"`
 			} `json:"external_urls"`
@@ -241,7 +241,7 @@ func tokenize(s string) []string {
 }
 
 // queryCoverage returns the fraction of query tokens that appear among a
-// track's title and artist tokens — how well the candidate accounts for what
+// track's title and artist tokens - how well the candidate accounts for what
 // the user typed, irrespective of word order.
 func queryCoverage(want []string, t *Track) float64 {
 	if len(want) == 0 {
@@ -283,7 +283,78 @@ func (c *Client) AddToQueue(ctx context.Context, trackURI string) error {
 	}
 }
 
-// do is the common HTTP wrapper — handles auth, body read, and status return.
+// GetQueue returns the user's current queue: the currently playing track
+// followed by the upcoming tracks in the queue.
+func (c *Client) GetQueue(ctx context.Context) (currentlyPlaying *Track, queue []*Track, err error) {
+	body, status, err := c.do(ctx, http.MethodGet, apiBase+"/me/player/queue", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if status == http.StatusNoContent {
+		return nil, nil, ErrNothingPlaying
+	}
+	if status != http.StatusOK {
+		return nil, nil, fmt.Errorf("get queue failed (%d): %s", status, body)
+	}
+
+	var raw struct {
+		CurrentlyPlaying *struct {
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			DurationMS   int    `json:"duration_ms"`
+			Explicit     bool   `json:"explicit"`
+			URI          string `json:"uri"`
+			ExternalURLs struct {
+				Spotify string `json:"spotify"`
+			} `json:"external_urls"`
+			Artists []struct {
+				Name string `json:"name"`
+			} `json:"artists"`
+			Album struct {
+				Name   string `json:"name"`
+				Images []struct {
+					URL    string `json:"url"`
+					Width  int    `json:"width"`
+					Height int    `json:"height"`
+				} `json:"images"`
+			} `json:"album"`
+		} `json:"currently_playing"`
+		Queue []json.RawMessage `json:"queue"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, nil, fmt.Errorf("parse queue response: %w", err)
+	}
+
+	if raw.CurrentlyPlaying != nil {
+		artists := make([]string, len(raw.CurrentlyPlaying.Artists))
+		for i, a := range raw.CurrentlyPlaying.Artists {
+			artists[i] = a.Name
+		}
+		currentlyPlaying = &Track{
+			ID:         raw.CurrentlyPlaying.ID,
+			Name:       raw.CurrentlyPlaying.Name,
+			Artists:    artists,
+			Album:      raw.CurrentlyPlaying.Album.Name,
+			AlbumArt:   pickLargestImage(raw.CurrentlyPlaying.Album.Images),
+			DurationMS: raw.CurrentlyPlaying.DurationMS,
+			URL:        raw.CurrentlyPlaying.ExternalURLs.Spotify,
+			URI:        raw.CurrentlyPlaying.URI,
+			Explicit:   raw.CurrentlyPlaying.Explicit,
+		}
+	}
+
+	for _, item := range raw.Queue {
+		t, err := parseTrack(item)
+		if err != nil {
+			continue
+		}
+		queue = append(queue, t)
+	}
+
+	return currentlyPlaying, queue, nil
+}
+
+// do is the common HTTP wrapper - handles auth, body read, and status return.
 func (c *Client) do(ctx context.Context, method, urlStr string, payload io.Reader) ([]byte, int, error) {
 	token, err := c.tokens.GetAccessToken()
 	if err != nil {

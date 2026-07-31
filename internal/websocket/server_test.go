@@ -19,7 +19,7 @@ import (
 func startTestServer(t *testing.T) (*Server, string, func()) {
 	t.Helper()
 
-	s := New("0") // port unused — httptest provides its own listener
+	s := New("0") // port unused - httptest provides its own listener
 
 	// Wire the upgrade handler into an httptest server.
 	ts := httptest.NewServer(http.HandlerFunc(s.handleUpgrade))
@@ -147,7 +147,7 @@ func TestEmoteCaching(t *testing.T) {
 	}
 	s.BroadcastImmediate(map[string]any{"type": "emotes", "emotes": emotes})
 
-	// Now connect — new client should receive cached emotes.
+	// Now connect - new client should receive cached emotes.
 	conn := dial(t, url)
 	defer conn.Close(websocket.StatusNormalClosure, "")
 

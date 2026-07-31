@@ -1,4 +1,4 @@
-# boozie_bot — Go Backend
+# boozie_bot - Go Backend
 
 The Go backend for boozie_bot. A single static binary that handles Twitch IRC, EventSub webhooks, a REST API, WebSocket server, and OBS integration.
 
@@ -50,8 +50,8 @@ internal/
     cmd_eggs.go             !eggs, !topeggs, !addeggs (mod)
     cmd_pools.go            !pool, !donate, !pools, !createpool (mod), !deletepool (mod)
     cmd_quotes.go           !quote, !addquote, !delquote (mod)
-    cmd_shoutouts.go        !so / !shoutout (mod) — Helix API lookup + shoutout call
-    cmd_merge.go            !mergeeggs (mod) — preview then execute
+    cmd_shoutouts.go        !so / !shoutout (mod) - Helix API lookup + shoutout call
+    cmd_merge.go            !mergeeggs (mod) - preview then execute
     cmd_system.go           !commands (lists custom + built-in), !reloadcommands (mod)
     cmd_custom.go           Fallthrough handler for database-driven custom commands
 
@@ -150,10 +150,10 @@ go vet ./...
 Multi-stage build: `golang:1.24-alpine` (builder) -> `alpine:3.20` (runtime).
 
 The final image contains:
-- `/app/bot` — static binary (CGO_ENABLED=0, ~17 MB)
-- `/app/config.json` — bot configuration
-- `/app/tokens.*.json` — Twitch OAuth tokens (Twurple format)
-- `/app/google-credentials.json` — Google Cloud TTS credentials
+- `/app/bot` - static binary (CGO_ENABLED=0, ~17 MB)
+- `/app/config.json` - bot configuration
+- `/app/tokens.*.json` - Twitch OAuth tokens (Twurple format)
+- `/app/google-credentials.json` - Google Cloud TTS credentials
 - `ca-certificates` + `tzdata`
 
 Exposes ports 3000 (HTTP API) and 3001 (WebSocket).

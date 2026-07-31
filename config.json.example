@@ -1,12 +1,12 @@
 {
-  "_comment_twitch": "Twitch Application credentials — create at https://dev.twitch.tv/console/apps",
+  "_comment_twitch": "Twitch Application credentials - create at https://dev.twitch.tv/console/apps",
   "clientId": "YOUR_TWITCH_CLIENT_ID",
   "clientSecret": "YOUR_TWITCH_CLIENT_SECRET",
 
   "_comment_secret": "Random string used for EventSub webhook HMAC verification (generate any random 20+ char string)",
   "secret": "YOUR_EVENTSUB_WEBHOOK_SECRET",
 
-  "_comment_obs": "OBS WebSocket connection (optional — for scene/source control)",
+  "_comment_obs": "OBS WebSocket connection (optional - for scene/source control)",
   "obsPassword": "YOUR_OBS_WEBSOCKET_PASSWORD",
   "obsIP": "ws://localhost:4455",
 
@@ -30,12 +30,12 @@
   "pointsNameSingular": "point",
   "pointsEmoji": "🪙",
 
-  "_comment_openai": "OpenAI API key (optional — for ChatGPT integration)",
+  "_comment_openai": "OpenAI API key (optional - for ChatGPT integration)",
   "openai": {
     "apiKey": "YOUR_OPENAI_API_KEY"
   },
 
-  "_comment_spotify": "Spotify Web API (optional — for now-playing overlay + !sr song requests). Requires Spotify Premium. Register an app at https://developer.spotify.com/dashboard, set redirectUri there to match. Then visit https://yourdomain.com/api/spotify/auth once as broadcaster to authorize.",
+  "_comment_spotify": "Spotify Web API (optional - for now-playing overlay + !sr song requests). Requires Spotify Premium. Register an app at https://developer.spotify.com/dashboard, set redirectUri there to match. Then visit https://yourdomain.com/api/spotify/auth once as broadcaster to authorize.",
   "spotify": {
     "enabled": false,
     "clientId": "YOUR_SPOTIFY_CLIENT_ID",
