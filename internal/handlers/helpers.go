@@ -99,7 +99,7 @@ func sanitizeColourInput(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	var b strings.Builder
 	for _, r := range s {
-		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || r == ' ' {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || r == ' ' || r == '_' || r == '-' {
 			b.WriteRune(r)
 		}
 	}
