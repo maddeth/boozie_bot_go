@@ -190,3 +190,34 @@ func (s *ColourService) Add(ctx context.Context, colourName, hex, username strin
 	}
 	return nil
 }
+
+// Rename updates the name and/or hex value of an existing colour by ID.
+// Returns pgx.ErrNoRows if the colour does not exist.
+func (s *ColourService) Rename(ctx context.Context, id int, newName, newHex string) error {
+	if newName != "" && newHex != "" {
+		_, err := s.db.Exec(ctx,
+			`UPDATE colours SET colourname = $2, hex_value = $3 WHERE id = $1`,
+			id, newName, newHex,
+		)
+		return err
+	} else if newName != "" {
+		_, err := s.db.Exec(ctx,
+			`UPDATE colours SET colourname = $2 WHERE id = $1`,
+			id, newName,
+		)
+		return err
+	} else if newHex != "" {
+		_, err := s.db.Exec(ctx,
+			`UPDATE colours SET hex_value = $2 WHERE id = $1`,
+			id, newHex,
+		)
+		return err
+	}
+	return nil
+}
+
+// Delete removes a colour by ID.
+func (s *ColourService) Delete(ctx context.Context, id int) error {
+	_, err := s.db.Exec(ctx, `DELETE FROM colours WHERE id = $1`, id)
+	return err
+}

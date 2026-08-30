@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/maddeth/boozie-bot/internal/auth"
@@ -30,6 +31,10 @@ func (h *ColourHandler) Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/colours/colourName", h.auth.AuthenticateToken(http.HandlerFunc(h.hexByColourName)))
 	mux.Handle("POST /api/colours/search", h.auth.AuthenticateToken(http.HandlerFunc(h.searchByName)))
 	mux.Handle("GET /api/colours/getLastColour", h.auth.AuthenticateToken(http.HandlerFunc(h.getLastColour)))
+
+	// Moderator-only endpoints (rename + delete colours)
+	mux.Handle("PUT /api/colours/{id}", h.auth.AuthenticateToken(h.auth.RequireModeratorRole(http.HandlerFunc(h.renameColour))))
+	mux.Handle("DELETE /api/colours/{id}", h.auth.AuthenticateToken(h.auth.RequireModeratorRole(http.HandlerFunc(h.deleteColour))))
 
 	// Test endpoint
 	mux.HandleFunc("POST /api/", h.testEndpoint)
@@ -218,4 +223,61 @@ func (h *ColourHandler) getLastColour(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, colour)
+}
+func (h *ColourHandler) renameColour(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid colour ID")
+		return
+	}
+
+	var body struct {
+		Colour string `json:"colour"`
+		Hex    string `json:"hex"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	newName := sanitizeColourInput(body.Colour)
+	newHex := sanitizeHexInput(body.Hex)
+
+	if newName == "" && len(newHex) != 6 {
+		writeError(w, http.StatusBadRequest, "Provide at least a valid colour name or 6-digit hex value to update")
+		return
+	}
+
+	if len(newHex) > 0 && len(newHex) != 6 {
+		writeError(w, http.StatusBadRequest, "Hex value must be 6 characters")
+		return
+	}
+
+	err = h.colours.Rename(r.Context(), id, newName, newHex)
+	if err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			writeError(w, http.StatusNotFound, "Colour not found")
+			return
+		}
+		logAndError(w, "Failed to rename colour", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Colour updated successfully"})
+}
+
+func (h *ColourHandler) deleteColour(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid colour ID")
+		return
+	}
+
+	err = h.colours.Delete(r.Context(), id)
+	if err != nil {
+		logAndError(w, "Failed to delete colour", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Colour deleted successfully"})
 }
